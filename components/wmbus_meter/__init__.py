@@ -35,7 +35,7 @@ CONFIG_SCHEMA = cv.Schema(
         cv.Required(CONF_METER_ID): cv.All(
             cv.hex_int,
             hex,
-            lambda s: s.removeprefix("0x").zfill(((len(s) + 1) // 2) * 2),
+            lambda s: (s:=s.removeprefix("0x")).zfill(((len(s) + 1) // 2) * 2),
         ),
         cv.Optional(CONF_TYPE, default="auto"): driver_validator,
         cv.Optional(CONF_KEY): cv.Any(
