@@ -1,3 +1,128 @@
+Kuba's dirty 
+
+TODO:
+- Add backward support for CC1101
+- Add support for SX1262 (with limited frame length)
+- Add triggers:
+  - Radio->on packet (allow to blink on frame/telegram)
+  - Meter->on telegram (allow e.g. to send whole telegram to MQTT)
+- Reimplement TCP and UCP senders. Should be classes with common interface to use as action under Radio->on packet trigger
+- Reimplement HEX and RTLWMBUS formatter to use as parameter of TCP/UDP action
+- ...
+- Prepare packages for ready made boards (like UltimateReader) with displays, leds etc.
+
+DONE:
+- Reuse CRCs and frame parsers from wmbusmeters
+- Refactor 3out6 decoder
+- Migrate to esp-idf and drop Arduino!
+- Add support for SX176
+- Run receiver in separate task
+- Drop all non wmbus related components from rf code part
+- Allow to specify ASCII decription key
+- Divide codebase to separate components (radio for radio communication, meter for meters (on which sensor may subscribe) and common for wmbusmeters code)
+
+Usage example:
+
+```yaml
+esphome:
+  name: wmbus
+  friendly_name: WMBus
+  platformio_options:
+    upload_speed: 921600
+
+esp32:
+  board: heltec_wifi_lora_32_V2
+  flash_size: 8MB
+  framework:
+    type: esp-idf
+  
+logger:
+  id: component_logger
+  level: DEBUG
+  baud_rate: 115200
+
+wifi:
+  networks:
+    - ssid: !secret wifi_ssid
+      password: !secret wifi_password
+
+api:
+
+web_server:
+  version: 3 
+
+time:
+  - platform: homeassistant
+
+spi:
+  clk_pin:
+    number: GPIO5
+    ignore_strapping_warning: true
+  mosi_pin: GPIO27
+  miso_pin: GPIO19
+
+wmbus_radio:
+  cs_pin: GPIO18
+  reset_pin: GPIO14
+  irq_pin: GPIO35
+
+wmbus_meter:
+  - id: electricity_meter
+    meter_id: 0x0101010101
+    type: amiplus
+    key: SomeKey
+  - id: heat_meter
+    meter_id: 0x101010101
+    type: hydrocalm3
+
+output:
+  - platform: gpio
+    id: vext_output
+    pin: GPIO21
+  - platform: gpio
+    id: oled_reset
+    pin: GPIO16
+    inverted: True
+
+sensor:
+  - platform: wmbus_meter
+    parent_id: heat_meter
+    field: total_heating_kwh
+    device_class: energy
+    name: Zużycie energii cieplnej
+    accuracy_decimals: 4
+    state_class: total_increasing
+
+  - platform: wmbus_meter
+    parent_id: electricity_meter
+    field: current_power_consumption_kw
+    name: Moc aktualna
+    accuracy_decimals: 0
+    device_class: power
+    unit_of_measurement: W
+    state_class: measurement
+    filters:
+      - multiply: 1000
+
+  - platform: wmbus_meter
+    parent_id: electricity_meter
+    field: total_energy_consumption_kwh
+    name: Zużycie energii
+    accuracy_decimals: 3
+    device_class: energy
+    state_class: total_increasing
+
+  - platform: wmbus_meter
+    parent_id: electricity_meter
+    field: rssi
+    name: Electricity Meter RSSI
+```
+
+For SX1276 radio you need to configure SPI instance as usual in ESPHome and additionally specify reset pin and IRQ pin (as DIO1). Interrupts are triggered on non empty FIFO. 
+
+
+===============================================================
+
 # Szczepan's esphome custom components
 
 This repository contains a collection of my custom components
