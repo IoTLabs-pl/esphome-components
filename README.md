@@ -1,4 +1,4 @@
-Kuba's dirty 
+Kuba's dirty fork of Szczepan's esphome custom components
 
 TODO:
 - Add backward support for CC1101
@@ -29,6 +29,10 @@ esphome:
   friendly_name: WMBus
   platformio_options:
     upload_speed: 921600
+
+external_components:
+  - source: github://IoTLabs-pl/esphome-components@main
+    refresh: 0d
 
 esp32:
   board: heltec_wifi_lora_32_V2
