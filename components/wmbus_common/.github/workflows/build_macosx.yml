@@ -1,0 +1,19 @@
+name: Build MacOSX
+on:
+  push:
+    branches:
+      - master
+
+jobs:
+  build:
+    runs-on: macOS-latest
+    steps:
+    - uses: actions/checkout@v4
+    - id: INSTALL_ADDITIONAL_BUILD_DEPENDENCIES
+      run: brew install librtlsdr libusb
+    - id: CONFIGURE
+      run: ./configure
+    - id: MAKE
+      run: make
+    - id: TEST
+      run: make test
