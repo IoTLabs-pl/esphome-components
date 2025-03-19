@@ -21,7 +21,6 @@
 #include"address.h"
 #include"dvparser.h"
 #include"manufacturers.h"
-#include"serial.h"
 #include"translatebits.h"
 #include"util.h"
 
@@ -78,12 +77,6 @@ enum class DeviceMode
 };
 const char *toString(DeviceMode mode);
 DeviceMode toDeviceMode(const char *s);
-
-bool usesTTY(BusDeviceType t);
-bool usesRTLSDR(BusDeviceType t);
-const char *toString(BusDeviceType t);
-const char *toLowerCaseString(BusDeviceType t);
-BusDeviceType toBusDeviceType(string &t);
 
 void setIgnoreDuplicateTelegrams(bool idt);
 void setDetailedFirst(bool df);
@@ -194,64 +187,8 @@ private:
     uint64_t set_ {};
 };
 
-LinkModeSet parseLinkModes(string modes);
-bool isValidLinkModes(string modes);
-
-// A specified bus device is supplied on the command line or in the config file.
-// It has this format "alias=file:type[id](extras):fq:bps:linkmods:CMD(command)"
-struct SpecifiedDevice
-{
-    std::string bus_alias; // A bus alias, necessary for C2/T2 meters and mbus.
-    int index; // 0,1,2,3 the order on the command line / config file.
-    std::string file; // simulation_meter.txt, stdin, file.raw, /dev/ttyUSB0
-    std::string hex; // a hex string supplied on the command line becomes a hex simulation.
-    bool is_tty{}, is_stdin{}, is_file{}, is_simulation{}, is_hex_simulation{};
-    BusDeviceType type; // im871a, rtlwmbus
-    std::string id; // 12345678 for wmbus dongles or 0,1 for rtlwmbus indexes.
-    std::string extras; // Extra device specific settings.
-    std::string fq; // 868.95M
-    std::string bps; // 9600
-    LinkModeSet linkmodes; // c1,t1,s1
-    std::string command; // command line of background process that streams data into wmbusmeters
-
-    bool handled {}; // Set to true when this device has been detected/handled.
-    time_t last_alarm {}; // Last time an alarm was sent for this device not being found.
-
-    void clear();
-    string str();
-    bool parse(string &s);
-    static bool isLikelyDevice(string &s);
-};
-
-struct Detected
-{
-    SpecifiedDevice specified_device {}; // Device as specified from the command line / config file.
-
-    string found_file; // The device file to use.
-    string found_hex;  // An immediate hex string is supplied.
-    string found_device_id; // An "unique" identifier, typically the id used by the dongle as its own wmbus id, if it transmits.
-    BusDeviceType found_type {};  // IM871A, AMB8465 etc.
-    int found_bps {}; // Serial speed of tty.
-    bool found_tty_override {};
-
-    void setSpecifiedDevice(SpecifiedDevice sd)
-    {
-        specified_device = sd;
-    }
-
-    void setAsFound(string id, BusDeviceType t, int b, bool to, LinkModeSet clm)
-    {
-        found_device_id = id;
-        found_type = t;
-        found_bps = b;
-        found_tty_override = to;
-    }
-
-    std::string str()
-    {
-        return found_file+":"+string(toString(found_type))+"["+found_device_id+"]"+":"+to_string(found_bps)+"/"+to_string(found_tty_override);
-    }
-};
+LinkModeSet parseLinkModes(std::string modes);
+bool isValidLinkModes(std::string modes);
 
 enum class CI_TYPE
 {
@@ -392,17 +329,17 @@ enum class Understanding
     NONE, ENCRYPTED, COMPRESSED, PARTIAL, FULL
 };
 
-struct Explanation
-{
-    int pos {};
-    int len {};
-    string info;
-    KindOfData kind {};
-    Understanding understanding {};
+// struct Explanation
+// {
+//     int pos {};
+//     int len {};
+//     string info;
+//     KindOfData kind {};
+//     Understanding understanding {};
 
-    Explanation(int p, int l, const string &i, KindOfData k, Understanding u) :
-        pos(p), len(l), info(i), kind(k), understanding(u) {}
-};
+//     Explanation(int p, int l, const string &i, KindOfData k, Understanding u) :
+//         pos(p), len(l), info(i), kind(k), understanding(u) {}
+// };
 
 struct Meter;
 
@@ -551,7 +488,7 @@ public:
 
     // A vector of indentations and explanations, to be printed
     // below the raw data bytes to explain the telegram content.
-    vector<Explanation> explanations;
+    // vector<Explanation> explanations;
     void addExplanationAndIncrementPos(vector<uchar>::iterator &pos, int len, KindOfData k, Understanding u, const char* fmt, ...);
     void setExplanation(vector<uchar>::iterator &pos, int len, KindOfData k, Understanding u, const char* fmt, ...);
     void addMoreExplanation(int pos, const char* fmt, ...);
@@ -636,122 +573,6 @@ struct SendBusContent
 
 struct Meter;
 
-struct BusDevice
-{
-    // Each bus can be given an alias name to be
-    // referred to from meters.
-    virtual std::string busAlias() = 0;
-
-    // I wmbus device identifier consists of:
-    // device:type[id] for example:
-    // /dev/ttyUSB1:im871a[12345678]
-
-    virtual std::string device() = 0;
-    virtual BusDeviceType type() = 0;
-    // The device id is the changeable id of the dongle.
-    // For im871a,amb8465 it is the transmit address.
-    // For rtlsdr it is the id set using rtl_eeprom.
-    // Not all dongles have this.
-    virtual string getDeviceId() = 0;
-    // The im871a and amb8465 dongles does have a unique, immutable id as well.
-    // Not all dongles have this.
-    virtual string getDeviceUniqueId() = 0;
-    // Human readable explanation of this device, eg: /dev/ttysUB0:im871a[12345678]:t1
-    virtual std::string hr() = 0;
-    virtual bool isSerial() = 0;
-
-    virtual LinkModeSet getLinkModes() = 0;
-    virtual DeviceMode deviceMode() = 0;
-    virtual bool ping() = 0;
-    virtual LinkModeSet supportedLinkModes() = 0;
-    virtual int numConcurrentLinkModes() = 0;
-    virtual bool canSetLinkModes(LinkModeSet lms) = 0;
-    virtual void setLinkModes(LinkModeSet lms) = 0;
-    virtual void setDeviceMode(DeviceMode mode) = 0;
-    virtual void onTelegram(function<bool(AboutTelegram&,vector<uchar>)> cb) = 0;
-    virtual bool sendTelegram(LinkMode link_mode, TelegramFormat format, vector<uchar> &content) = 0;
-    virtual SerialDevice *serial() = 0;
-    // Return true of the serial has been overridden, usually with stdin or a file.
-    virtual bool serialOverride() = 0;
-    virtual void simulate() = 0;
-    // Return true if underlying device is ok and device in general seems to be working.
-    virtual bool isWorking() = 0;
-    // This will check if the wmbus devices needs a reset and then immediately perform the reset.
-    virtual void checkStatus() = 0;
-    // Close any underlying ttys or software and restart/reinitialize.
-    // Return true if ok.
-    virtual bool reset() = 0;
-    // Set a dead-mans grip timeout, if no telegram is received
-    // within seconds, then invoke reset(). However do not reset
-    // when no activity is expected.
-    virtual void setTimeout(int seconds, std::string expected_activity) = 0;
-    // Set a regular interval for resetting the wmbus device.
-    // Default is once ever 24 hours.
-    virtual void setResetInterval(int seconds) = 0;
-    // Close this device.
-    virtual void close() = 0;
-    // Remember how this device was detected.
-    virtual void setDetected(Detected detected) = 0;
-    virtual Detected *getDetected() = 0;
-
-    virtual ~BusDevice() = 0;
-};
-
-Detected detectBusDeviceWithFileOrHex(SpecifiedDevice &specified_device,
-                                      LinkModeSet default_linkmodes,
-                                      shared_ptr<SerialCommunicationManager> manager);
-Detected detectBusDeviceWithCommand(SpecifiedDevice &specified_device,
-                                    LinkModeSet default_linkmodes,
-                                    shared_ptr<SerialCommunicationManager> handler);
-
-
-shared_ptr<BusDevice> openIM871A(Detected detected,
-                             shared_ptr<SerialCommunicationManager> manager,
-                             shared_ptr<SerialDevice> serial_override);
-shared_ptr<BusDevice> openIM170A(Detected detected,
-                             shared_ptr<SerialCommunicationManager> manager,
-                             shared_ptr<SerialDevice> serial_override);
-shared_ptr<BusDevice> openIU891A(Detected detected,
-                             shared_ptr<SerialCommunicationManager> manager,
-                             shared_ptr<SerialDevice> serial_override);
-shared_ptr<BusDevice> openIU880B(Detected detected,
-                             shared_ptr<SerialCommunicationManager> manager,
-                             shared_ptr<SerialDevice> serial_override);
-shared_ptr<BusDevice> openAMB8465(Detected detected,
-                              shared_ptr<SerialCommunicationManager> manager,
-                              shared_ptr<SerialDevice> serial_override);
-shared_ptr<BusDevice> openAMB3665(Detected detected,
-                                  shared_ptr<SerialCommunicationManager> manager,
-                                  shared_ptr<SerialDevice> serial_override);
-shared_ptr<BusDevice> openRawTTY(Detected detected,
-                             shared_ptr<SerialCommunicationManager> manager,
-                             shared_ptr<SerialDevice> serial_override);
-shared_ptr<BusDevice> openHexTTY(Detected detected,
-                             shared_ptr<SerialCommunicationManager> manager,
-                             shared_ptr<SerialDevice> serial_override);
-shared_ptr<BusDevice> openMBUS(Detected detected,
-                           shared_ptr<SerialCommunicationManager> manager,
-                           shared_ptr<SerialDevice> serial_override);
-shared_ptr<BusDevice> openRC1180(Detected detected,
-                             shared_ptr<SerialCommunicationManager> manager,
-                             shared_ptr<SerialDevice> serial_override);
-shared_ptr<BusDevice> openRTLWMBUS(Detected detected,
-                               string bin_dir,
-                               bool daemon,
-                               shared_ptr<SerialCommunicationManager> manager,
-                               shared_ptr<SerialDevice> serial_override);
-shared_ptr<BusDevice> openRTL433(Detected detected,
-                             string bin_dir,
-                             bool daemon,
-                             shared_ptr<SerialCommunicationManager> manager,
-                             shared_ptr<SerialDevice> serial_override);
-shared_ptr<BusDevice> openCUL(Detected detected,
-                          shared_ptr<SerialCommunicationManager> manager,
-                          shared_ptr<SerialDevice> serial_override);
-shared_ptr<BusDevice> openSimulator(Detected detected,
-                                shared_ptr<SerialCommunicationManager> manager,
-                                shared_ptr<SerialDevice> serial_override);
-
 string manufacturer(int m_field);
 string mediaType(int a_field_device_type, int m_field);
 string mediaTypeJSON(int a_field_device_type, int m_field);
@@ -801,33 +622,6 @@ FrameStatus checkMBusFrame(vector<uchar> &data,
                            int *payload_len_out,
                            int *payload_offset,
                            bool only_test);
-
-AccessCheck reDetectDevice(Detected *detected, shared_ptr<SerialCommunicationManager> handler);
-
-AccessCheck detectAUTO(Detected *detected, shared_ptr<SerialCommunicationManager> handler);
-AccessCheck detectAMB8465AMB3665(Detected *detected, shared_ptr<SerialCommunicationManager> handler);
-//AccessCheck detectAMB3665(Detected *detected, shared_ptr<SerialCommunicationManager> handler);
-AccessCheck detectCUL(Detected *detected, shared_ptr<SerialCommunicationManager> handler);
-AccessCheck detectD1TC(Detected *detected, shared_ptr<SerialCommunicationManager> manager);
-AccessCheck detectIM871AIM170A(Detected *detected, shared_ptr<SerialCommunicationManager> handler);
-AccessCheck detectIU891A(Detected *detected, shared_ptr<SerialCommunicationManager> handler);
-AccessCheck detectIU880B(Detected *detected, shared_ptr<SerialCommunicationManager> handler);
-AccessCheck detectRAWTTY(Detected *detected, shared_ptr<SerialCommunicationManager> handler);
-AccessCheck detectMBUS(Detected *detected, shared_ptr<SerialCommunicationManager> handler);
-AccessCheck detectRC1180(Detected *detected, shared_ptr<SerialCommunicationManager> handler);
-AccessCheck detectRTL433(Detected *detected, shared_ptr<SerialCommunicationManager> handler);
-AccessCheck detectRTLWMBUS(Detected *detected, shared_ptr<SerialCommunicationManager> handler);
-AccessCheck detectSKIP(Detected *detected, shared_ptr<SerialCommunicationManager> handler);
-
-// Try to factory reset an AMB8465/AMB3665 by trying all possible serial speeds and
-// restore to factory settings.
-AccessCheck factoryResetAMB8465(string tty, shared_ptr<SerialCommunicationManager> handler, int *was_baud);
-AccessCheck factoryResetAMB3665(string tty, shared_ptr<SerialCommunicationManager> handler, int *was_baud);
-
-Detected detectBusDeviceOnTTY(string tty,
-                              set<BusDeviceType> probe_for,
-                              LinkModeSet desired_linkmodes,
-                              shared_ptr<SerialCommunicationManager> handler);
 
 // Remember meters id/mfct/ver/type combos that we should only warn once for.
 bool warned_for_telegram_before(Telegram *t, vector<uchar> &dll_a);

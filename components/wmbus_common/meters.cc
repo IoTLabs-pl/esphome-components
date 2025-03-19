@@ -15,10 +15,6 @@
  along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-#include"bus.h"
-#include"config.h"
-#include"drivers.h"
-#include"driver_dynamic.h"
 #include"meters.h"
 #include"meters_common_implementation.h"
 #include"units.h"
@@ -206,119 +202,10 @@ bool registerDriver(function<void(DriverInfo&)> setup)
     return true;
 }
 
-string loadDriver(const string &file, const char *content)
-{
-    DriverInfo di;
-
-    debug("(meter) loading %s\n", file.c_str());
-    bool ok = DriverDynamic::load(&di, file, content);
-    if (!ok)
-    {
-        error("Failed to load driver from file: %s\n", file.c_str());
-    }
-
-    // Check if the driver name has been registered before....
-    DriverInfo *old = lookupDriver(di.name().str());
-    if (old != NULL)
-    {
-        debug("(meter) overriding %s\n", di.name().str().c_str());
-        if (old->getDynamicFileName() != "")
-        {
-            if (di.getDynamicFileName() == old->getDynamicFileName())
-            {
-                // Loading same file again, happens when using analyze. This is fine.
-                return di.name().str();
-            }
-            // New file source registering the same driver name, nono.
-            error("Newly loaded driver file %s tries to register the same name %s as driver file %s has already taken!\n",
-                  file.c_str(), di.name().str().c_str(), old->getDynamicFileName().c_str());
-        }
-        else
-        {
-            verbose("(drivers) newly loaded driver %s overrides builtin driver\n",
-                    file.c_str(), di.name().str().c_str());
-            removeDriver(di.name().str());
-        }
-    }
-
-    // Check that no other driver also triggers on the same detection values.
-    for (auto &d : di.detect())
-    {
-        for (DriverInfo *p : allDrivers())
-        {
-            bool foo = p->detect(d.mfct, d.type, d.version);
-            if (foo)
-            {
-                string mfct = manufacturerFlag(d.mfct);
-                if (p->getDynamicFileName() != "")
-                {
-                    // It is not ok to override an previously file loaded driver!
-                    error("Newly loaded driver %s tries to register the same "
-                          "auto detect combo as driver %s alread has taken! mvt=%s,%02x,%02x\n",
-                          di.name().str().c_str(),
-                          p->name().str().c_str(),
-                          mfct.c_str(),
-                          d.version,
-                          d.type);
-                }
-                else
-                {
-                    // It is ok to override a built in driver!
-                    verbose("(driver) newly loaded driver %s forces removal of builtin "
-                            "driver %s since it auto-detects the same combo! mvt=%s,%02x,%02x\n",
-                          di.name().str().c_str(),
-                          p->name().str().c_str(),
-                          mfct.c_str(),
-                          d.version,
-                          d.type);
-                    removeDriver(p->name().str());
-                }
-            }
-        }
-    }
-
-    // Everything looks, good install this driver.
-    addRegisteredDriver(di);
-
-    return di.name().str();
-}
-
 bool lookupDriverInfo(const string& driver_name, DriverInfo *out_di)
 {
     // Lookup an already loaded driver, it might be compiled in as well.
     DriverInfo *di = lookupDriver(driver_name);
-    if (di)
-    {
-        if (out_di) *out_di = *di;
-        return true;
-    }
-
-    // Lookup a dynamic text driver that can be loaded from memory.
-    if (loadBuiltinDriver(driver_name))
-    {
-        // It is loaded, lets fetch the DriverInfo.
-        di = lookupDriver(driver_name);
-        if (di)
-        {
-            if (out_di) *out_di = *di;
-            return true;
-        }
-    }
-
-    // Is this a dynamic text driver file?
-    if (!endsWith(driver_name, ".xmq") || !checkFileExists(driver_name.c_str()))
-    {
-        // Nope, give up.
-        return false;
-    }
-
-    string file_name = driver_name;
-
-    // Load the driver from the file.
-    string new_name = loadDriver(file_name, NULL);
-
-    // Check again if it was registered.
-    di = lookupDriver(new_name);
     if (di)
     {
         if (out_di) *out_di = *di;
@@ -337,7 +224,6 @@ MeterCommonImplementation::MeterCommonImplementation(MeterInfo &mi,
     name_(mi.name),
     mfct_tpl_status_bits_(di.mfctTPLStatusBits()),
     has_process_content_(di.hasProcessContent()),
-    waiting_for_poll_response_sem_("waiting_for_poll_response"),
     more_records_follow_(false)
 {
     address_expressions_ = mi.address_expressions;
@@ -700,201 +586,6 @@ void MeterCommonImplementation::addStringField(string vname,
             ));
 }
 
-bool send_primary_poll(Meter *m, BusDevice *bus_device, AddressExpression *ae, bool next_telegram, uchar fcb)
-{
-    const char *again;
-
-    again = "";
-    if (next_telegram) again = "again ";
-
-    int idnum = atoi(ae->id.c_str()+1);
-
-    if (idnum < 0 || idnum > 250)
-    {
-        warning("(meter) not polling from bad id \"%s\"\n", ae->id.c_str());
-        return false;
-    }
-
-    vector<uchar> buf;
-    buf.resize(5);
-    buf[0] = 0x10; // Start
-    if (fcb == 0) buf[1] = 0x5b; // REQ_UD2 fcb==0
-    else          buf[1] = 0x7b; // REQ_UD2 fcb==1
-    buf[2] = idnum & 0xff;
-    uchar cs = 0;
-    for (int i=1; i<3; ++i) cs += buf[i];
-    buf[3] = cs; // checksum
-    buf[4] = 0x16; // Stop
-
-    verbose("(meter) polling %s%s %s (primary) with req ud2 fcb=%u on bus %s\n",
-            again,
-            m->name().c_str(),
-            ae->id.c_str(),
-            fcb,
-            bus_device->busAlias().c_str());
-    bus_device->serial()->send(buf);
-
-    return true;
-}
-
-bool send_secondary_poll(Meter *m, BusDevice *bus_device, AddressExpression *ae, bool next_telegram, uchar fcb)
-{
-    // A full secondary address 12345678 was specified.
-    const char *again;
-
-    again = "";
-    if (next_telegram) again = "again ";
-
-    if (!next_telegram)
-    {
-        // Only send the setup secondary address for the first UD_REQ2.
-        vector<uchar> idhex;
-        bool ok = hex2bin(ae->id, &idhex);
-
-        if (!ok || idhex.size() != 4)
-        {
-            warning("(meter) not polling from bad id \"%s\"\n", ae->id.c_str());
-            return false;
-        }
-
-        vector<uchar> buf;
-        buf.resize(17);
-        buf[0] = 0x68;
-        buf[1] = 0x0b;
-        buf[2] = 0x0b;
-        buf[3] = 0x68;
-        buf[4] = 0x73; // SND_UD
-        buf[5] = 0xfd; // address 253
-        buf[6] = 0x52; // ci 52
-        // Assuming we send id 12345678
-        buf[7] = idhex[3]; // id 78
-        buf[8] = idhex[2]; // id 56
-        buf[9] = idhex[1]; // id 34
-        buf[10] = idhex[0]; // id 12
-        buf[11] = ae->mfct & 0xff; // mfct
-        buf[12] = (ae->mfct >> 8) & 0xff; // use 0xff as a wildcard
-        buf[13] = ae->version; // version/generation
-        buf[14] = ae->type; // type/media/device
-
-        uchar cs = 0;
-        for (int i=4; i<15; ++i) cs += buf[i];
-        buf[15] = cs; // checksum
-        buf[16] = 0x16; // Stop
-
-        debug("(meter) secondary addressing bus %s to address %s\n",
-              bus_device->busAlias().c_str(),
-              ae->id.c_str());
-        bus_device->serial()->send(buf);
-
-        usleep(1000*500);
-    }
-
-    vector<uchar> buf;
-    buf.resize(5);
-    buf[0] = 0x10; // Start
-    if (fcb == 0) buf[1] = 0x5b; // REQ_UD2 fcb==0
-    else          buf[1] = 0x7b; // REQ_UD2 fcb==1
-    buf[2] = 0xfd; // Address 253 previously primed with the secondary address.
-    uchar cs = 0;
-    for (int i=1; i<3; ++i) cs += buf[i];
-    buf[3] = cs; // checksum
-    buf[4] = 0x16; // Stop
-
-    verbose("(meter) polling %s%s %s (secondary) with req ud2 fcb=%u bus %s\n",
-            again,
-            m->name().c_str(),
-            ae->id.c_str(),
-            fcb,
-            bus_device->busAlias().c_str());
-    bus_device->serial()->send(buf);
-
-    return true;
-}
-
-void MeterCommonImplementation::poll(shared_ptr<BusManager> bus_manager)
-{
-    if (!usesPolling()) return;
-
-    // An valid poll interval must have been set!
-    if (pollInterval() <= 0) return;
-
-    time_t now = time(NULL);
-    time_t next_poll_time = datetime_of_poll_+pollInterval();
-    if (now < next_poll_time)
-    {
-        // Not yet time to poll this meter.
-        return;
-    }
-
-    BusDevice *bus_device = bus_manager->findBus(bus());
-
-    if (!bus_device)
-    {
-        string aesc = AddressExpression::concat(addressExpressions());
-        warning("(meter) warning! no bus specified for meter %s %s\n", name().c_str(), aesc.c_str());
-        return;
-    }
-
-    if (addressExpressions().size() == 0)
-    {
-        warning("(meter) not polling from \"%s\" since no valid id\n", name().c_str());
-        return;
-    }
-
-    AddressExpression &ae = addressExpressions().back();
-    if (ae.has_wildcard)
-    {
-        warning("(meter) not polling from id \"%s\" since poll id must not have a wildcard\n", ae.id.c_str());
-        return;
-    }
-
-    // Reading the mbus spec:
-    // https://m-bus.com/documentation-wired/05-data-link-layer
-    // https://m-bus.com/documentation-wired/07-network-layer
-    // A valid secondary selection command will force the fcb bit in the meter to 0.
-    // The next fcb bit should therefore be 1 to make sure we send a fresh telegram.
-    uchar fcb = 1;
-    bool next_telegram = false;
-    int num_repolls = 0;
-    for (;;)
-    {
-        if (ae.mbus_primary)
-        {
-            bool ok = send_primary_poll(this, bus_device, &ae, next_telegram, fcb);
-            if (!ok) return;
-        }
-        else
-        {
-            bool ok = send_secondary_poll(this, bus_device, &ae, next_telegram, fcb);
-            if (!ok) return;
-        }
-
-        bool ok = waiting_for_poll_response_sem_.wait();
-        if (!ok)
-        {
-            warning("(meter) %s %s did not send a response!\n", name().c_str(), ae.id.c_str());
-            break;
-        }
-        if (!more_records_follow_) break;
-        next_telegram = true;
-        // Toggle fcb
-        if (fcb == 0) fcb = 1;
-        else          fcb = 0;
-        num_repolls++;
-        debug("(meter) found 0x1f record, polling again (%d) with fcb=%u for more data\n",
-              num_repolls,
-              fcb);
-
-        if (num_repolls > 10)
-        {
-            warning("(meter) repolling more than 10 times and no 0x0f found yet! Giving up!\n");
-            break;
-        }
-        // Sleep 50ms before polling for the next telegram.
-        usleep(1000*50);
-    }
-}
-
 vector<AddressExpression>& MeterCommonImplementation::addressExpressions()
 {
     return address_expressions_;
@@ -918,11 +609,6 @@ vector<string> &MeterCommonImplementation::extraConstantFields()
 string MeterCommonImplementation::name()
 {
     return name_;
-}
-
-void MeterCommonImplementation::onUpdate(function<void(Telegram*,Meter*)> cb)
-{
-    on_update_.push_back(cb);
 }
 
 int MeterCommonImplementation::numUpdates()
@@ -1044,14 +730,12 @@ bool MeterCommonImplementation::isTelegramForMeter(Telegram *t, Meter *meter, Me
         driver_name = mi->driver_name.str();
     }
 
-    if (isDebugEnabled())
-    {
-        // Telegram addresses
-        string t_idsc = Address::concat(t->addresses);
-        // Meter/MeterInfo address expressions
-        string m_idsc = AddressExpression::concat(address_expressions);
-        debug("(meter) %s: for me? %s in %s\n", name.c_str(), t_idsc.c_str(), m_idsc.c_str());
-    }
+    // Telegram addresses
+    string t_idsc = Address::concat(t->addresses);
+    // Meter/MeterInfo address expressions
+    string m_idsc = AddressExpression::concat(address_expressions);
+    debug("(meter) %s: for me? %s in %s\n", name.c_str(), t_idsc.c_str(), m_idsc.c_str());
+
 
     bool used_wildcard = false;
     bool match = doesTelegramMatchExpressions(t->addresses,
@@ -1069,49 +753,6 @@ bool MeterCommonImplementation::isTelegramForMeter(Telegram *t, Meter *meter, Me
     if (!valid_driver && t->tpl_id_found)
     {
         valid_driver = isMeterDriverValid(driver_name, t->tpl_mfct, t->tpl_type, t->tpl_version);
-    }
-
-    if (!valid_driver)
-    {
-        // Are we using the right driver? Perhaps not since
-        // this particular driver, mfct, media, version combo
-        // is not registered in the METER_DETECTION list in meters.h
-
-        // There was an attempt to give up here if there was a wildcard and it was the wrong driver.
-        // However some users did expect it to work anyway! This might make sense
-        // in the future when we have even better dynamic drivers.
-        // It already make sense if you create an amalgamation driver for several different
-        // types of meters and want to force the use of this driver.
-
-        // The match was exact, ie the user has actually specified 12345678 and foo as driver even
-        // though they do not match. Lets warn and then proceed. It is common that a user tries a
-        // new version of a meter with the old driver, thus it might not be a real error.
-        if (isVerboseEnabled() || isDebugEnabled() || !warned_for_telegram_before(t, t->dll_a))
-        {
-            string possible_drivers = t->autoDetectPossibleDrivers();
-            if (t->beingAnalyzed() == false && // Do not warn when analyzing.
-                driver_name != "auto" && // Do not warn when driver is auto. We can expecte errors then.
-                t->dll_mfct != 0) // Do not warn if dll_mfct == 0 because this is primary mbus address.
-            {
-                warning("(meter) %s: meter detection did not match the selected driver %s! correct driver is: %s\n"
-                        "(meter) Not printing this warning again for id: %02x%02x%02x%02x mfct: (%s) %s (0x%02x) type: %s (0x%02x) ver: 0x%02x\n",
-                        name.c_str(),
-                        driver_name.c_str(),
-                        possible_drivers.c_str(),
-                        t->dll_id_b[3], t->dll_id_b[2], t->dll_id_b[1], t->dll_id_b[0],
-                        manufacturerFlag(t->dll_mfct).c_str(),
-                        manufacturer(t->dll_mfct).c_str(),
-                        t->dll_mfct,
-                        mediaType(t->dll_type, t->dll_mfct).c_str(), t->dll_type,
-                        t->dll_version);
-
-                if (possible_drivers == "unknown!")
-                {
-                    warning("(meter) please consider opening an issue at https://github.com/wmbusmeters/wmbusmeters/\n");
-                    warning("(meter) to add support for this unknown mfct,media,version combination\n");
-                }
-            }
-        }
     }
 
     debug("(meter) %s: yes for me\n", name.c_str());
@@ -1147,7 +788,6 @@ void MeterCommonImplementation::triggerUpdate(Telegram *t)
     datetime_of_poll_ = time(NULL);
     datetime_of_update_ = t->about.timestamp ? t->about.timestamp : datetime_of_poll_;
     num_updates_++;
-    for (auto &cb : on_update_) if (cb) cb(t, this);
     t->handled = true;
 }
 
@@ -1353,20 +993,15 @@ bool MeterCommonImplementation::handleTelegram(AboutTelegram &about, vector<ucha
     }
 
     *id_match = true;
-    if (isVerboseEnabled())
-    {
-        verbose("(meter) %s(%d) %s  handling telegram from %s\n",
-                name().c_str(),
-                index(),
-                driverName().str().c_str(),
-                t.addresses.back().str().c_str());
-    }
 
-    if (isDebugEnabled())
-    {
-        string msg = bin2hex(input_frame);
-        debug("(meter) %s %s \"%s\"\n", name().c_str(), t.addresses.back().str().c_str(), msg.c_str());
-    }
+    verbose("(meter) %s(%d) %s  handling telegram from %s\n",
+            name().c_str(),
+            index(),
+            driverName().str().c_str(),
+            t.addresses.back().str().c_str());
+    
+    string msg = bin2hex(input_frame);
+    debug("(meter) %s %s \"%s\"\n", name().c_str(), t.addresses.back().str().c_str(), msg.c_str());
 
     // For older meters with manufacturer specific data without a nice 0f dif marker.
     if (force_mfct_index_ != -1)
@@ -1382,17 +1017,9 @@ bool MeterCommonImplementation::handleTelegram(AboutTelegram &about, vector<ucha
         return false;
     }
 
-    char log_prefix[256];
-    snprintf(log_prefix, 255, "(%s) log", driverName().str().c_str());
-    logTelegram(t.original, t.frame, t.header_size, t.suffix_size);
-
-    if (usesPolling())
-    {
-        // Did the parser find a 0x1b record? If so, then we should poll again for the next
-        // telegram using REQ_UD2 0x7b instead of 0x5b.
-        more_records_follow_ = (t.mfct_1f_index != -1);
-        waiting_for_poll_response_sem_.notify();
-    }
+    // char log_prefix[256];
+    // snprintf(log_prefix, 255, "(%s) log", driverName().str().c_str());
+    // logTelegram(t.original, t.frame, t.header_size, t.suffix_size);
 
     // Invoke standardized field extractors!
     processFieldExtractors(&t);
@@ -1406,12 +1033,8 @@ bool MeterCommonImplementation::handleTelegram(AboutTelegram &about, vector<ucha
 
     // All done....
 
-    if (isDebugEnabled())
-    {
-        char log_prefix[256];
-        snprintf(log_prefix, 255, "(%s)", driverName().str().c_str());
-        t.explainParse(log_prefix, 0);
-    }
+    // snprintf(log_prefix, 255, "(%s)", driverName().str().c_str());
+    // t.explainParse(log_prefix, 0);
 
     triggerUpdate(&t);
 
@@ -1482,23 +1105,20 @@ void MeterCommonImplementation::processFieldExtractors(Telegram *t)
                 }
                 else
                 {
-                    if (isVerboseEnabled())
+                    set<DVEntry*> old = founds[&fi];
+                    string olds;
+                    for (DVEntry *dve : old)
                     {
-                        set<DVEntry*> old = founds[&fi];
-                        string olds;
-                        for (DVEntry *dve : old)
-                        {
-                            olds += to_string(dve->offset)+",";
-                        }
-                        olds.pop_back();
-
-                        verbose("(meter) while processing field extractors ignoring dventry %s at offset %d matching since "
-                                "field %s was already matched against offsets %s !\n",
-                                dve->dif_vif_key.str().c_str(),
-                                dve->offset,
-                                fi.vname().c_str(),
-                                olds.c_str());
+                        olds += to_string(dve->offset)+",";
                     }
+                    olds.pop_back();
+
+                    verbose("(meter) while processing field extractors ignoring dventry %s at offset %d matching since "
+                            "field %s was already matched against offsets %s !\n",
+                            dve->dif_vif_key.str().c_str(),
+                            dve->offset,
+                            fi.vname().c_str(),
+                            olds.c_str());   
                 }
             }
         }
@@ -1902,7 +1522,6 @@ void MeterCommonImplementation::createMeterEnv(string id,
     envs->push_back(string("METER_ID="+id));
     envs->push_back(string("METER_NAME=")+name());
     envs->push_back(string("METER_TYPE=")+driverName().str());
-    envs->push_back(string("METER_DRIVER=")+driver_info_->getDynamicSource());
 
     // If the configuration has supplied json_address=Roodroad 123
     // then the env variable METER_address will available and have the content "Roodroad 123"
@@ -1927,8 +1546,10 @@ void MeterCommonImplementation::printMeter(Telegram *t,
 {
     bool first = !t->meter->hasReceivedFirstTelegram();
 
-    *human_readable = concatFields(this, t, '\t', field_infos_, true, selected_fields, extra_constant_fields);
-    *fields = concatFields(this, t, separator, field_infos_, false, selected_fields, extra_constant_fields);
+    if (human_readable)
+        *human_readable = concatFields(this, t, '\t', field_infos_, true, selected_fields, extra_constant_fields);
+    if (fields)
+        *fields = concatFields(this, t, separator, field_infos_, false, selected_fields, extra_constant_fields);
 
     string media;
     if (t->tpl_id_found)
@@ -1950,140 +1571,146 @@ void MeterCommonImplementation::printMeter(Telegram *t,
         id = build_id(t->addresses.back(), identityMode());
     }
 
-    string indent = "";
-    string newline = "";
-
-    if (pretty_print_json)
+    if(json)
     {
-        indent = "    ";
-        newline ="\n";
-    }
+        string indent = "";
+        string newline = "";
 
-    string s;
-    s += "{"+newline;
-    s += indent+"\"_\":\"telegram\","+newline;
-    s += indent+"\"media\":\""+media+"\","+newline;
-    s += indent+"\"meter\":\""+driverName().str()+"\","+newline;
-    s += indent+"\"name\":\""+name()+"\","+newline;
-    s += indent+"\"id\":\""+id+"\","+newline;
-
-    // Iterate over the meter field infos...
-    map<FieldInfo*,set<DVEntry*>> founds; // Multiple dventries can match to a single field info.
-    set<string> found_vnames;
-
-    for (auto &p : numeric_values_)
-    {
-        string vname = p.first.first;
-        NumericField& nf = p.second;
-        if (nf.field_info->printProperties().hasHIDE()) continue;
-
-        string out = nf.field_info->renderJson(this, &nf.dv_entry);
-        s += indent+out+","+newline;
-
-        if (first && getDetailedFirst())
+        if (pretty_print_json)
         {
-            size_t pos = out.find("\":");
-            if (pos != string::npos)
+            indent = "    ";
+            newline ="\n";
+        }
+
+        string s;
+        s += "{"+newline;
+        s += indent+"\"_\":\"telegram\","+newline;
+        s += indent+"\"media\":\""+media+"\","+newline;
+        s += indent+"\"meter\":\""+driverName().str()+"\","+newline;
+        s += indent+"\"name\":\""+name()+"\","+newline;
+        s += indent+"\"id\":\""+id+"\","+newline;
+
+        // Iterate over the meter field infos...
+        map<FieldInfo*,set<DVEntry*>> founds; // Multiple dventries can match to a single field info.
+        set<string> found_vnames;
+
+        for (auto &p : numeric_values_)
+        {
+            string vname = p.first.first;
+            NumericField& nf = p.second;
+            if (nf.field_info->printProperties().hasHIDE()) continue;
+
+            string out = nf.field_info->renderJson(this, &nf.dv_entry);
+            s += indent+out+","+newline;
+
+            if (first && getDetailedFirst())
             {
-                string rule = out.substr(0, pos)+"_field\":"+to_string(nf.field_info->index());
-                s += indent+rule+","+newline;
+                size_t pos = out.find("\":");
+                if (pos != string::npos)
+                {
+                    string rule = out.substr(0, pos)+"_field\":"+to_string(nf.field_info->index());
+                    s += indent+rule+","+newline;
+                }
             }
         }
-    }
 
-    for (auto &p : string_values_)
-    {
-        string vname = p.first;
-        StringField& sf = p.second;
-        string out;
+        for (auto &p : string_values_)
+        {
+            string vname = p.first;
+            StringField& sf = p.second;
+            string out;
 
-        if (sf.field_info->printProperties().hasHIDE()) continue;
-        if (sf.field_info->printProperties().hasSTATUS())
-        {
-            string in = getStatusField(sf.field_info);
-            out = tostrprintf("\"%s\":\"%s\"", vname.c_str(), in.c_str());
-            s += indent+out+","+newline;
-        }
-        else
-        {
-            if (sf.value == "null")
+            if (sf.field_info->printProperties().hasHIDE()) continue;
+            if (sf.field_info->printProperties().hasSTATUS())
             {
-                // The string "null" translates to actual json null.
-                out = tostrprintf("\"%s\":null", vname.c_str());
+                string in = getStatusField(sf.field_info);
+                out = tostrprintf("\"%s\":\"%s\"", vname.c_str(), in.c_str());
                 s += indent+out+","+newline;
             }
             else
             {
-                out = tostrprintf("\"%s\":\"%s\"", vname.c_str(), sf.value.c_str());
-                s += indent+out+","+newline;
+                if (sf.value == "null")
+                {
+                    // The string "null" translates to actual json null.
+                    out = tostrprintf("\"%s\":null", vname.c_str());
+                    s += indent+out+","+newline;
+                }
+                else
+                {
+                    out = tostrprintf("\"%s\":\"%s\"", vname.c_str(), sf.value.c_str());
+                    s += indent+out+","+newline;
+                }
             }
-        }
-        if (first && getDetailedFirst())
-        {
-            size_t pos = out.find("\":");
-            if (pos != string::npos)
+            if (first && getDetailedFirst())
             {
-                string rule = out.substr(0, pos)+"_field\":"+to_string(sf.field_info->index());
-                s += indent+rule+","+newline;
+                size_t pos = out.find("\":");
+                if (pos != string::npos)
+                {
+                    string rule = out.substr(0, pos)+"_field\":"+to_string(sf.field_info->index());
+                    s += indent+rule+","+newline;
+                }
             }
         }
-    }
-    s += indent+"\"timestamp\":\""+datetimeOfUpdateRobot()+"\"";
+        s += indent+"\"timestamp\":\""+datetimeOfUpdateRobot()+"\"";
 
-    if (t->about.device != "")
-    {
-        s += ","+newline;
-        s += indent+"\"device\":\""+t->about.device+"\","+newline;
-        s += indent+"\"rssi_dbm\":"+to_string(t->about.rssi_dbm);
-    }
-    for (string extra_field : meterExtraConstantFields())
-    {
-        s += ","+newline;
-        s += indent+makeQuotedJson(extra_field);
-    }
-    for (string extra_field : *extra_constant_fields)
-    {
-        s += ","+newline;
-        s += indent+makeQuotedJson(extra_field);
-    }
-    s += newline;
-    s += "}";
-    *json = s;
-
-    createMeterEnv(id, envs, extra_constant_fields);
-
-    envs->push_back(string("METER_JSON=")+*json);
-    envs->push_back(string("METER_MEDIA=")+media);
-    envs->push_back(string("METER_TIMESTAMP=")+datetimeOfUpdateRobot());
-    envs->push_back(string("METER_TIMESTAMP_UTC=")+datetimeOfUpdateRobot());
-    envs->push_back(string("METER_TIMESTAMP_UT=")+unixTimestampOfUpdate());
-    envs->push_back(string("METER_TIMESTAMP_LT=")+datetimeOfUpdateHumanReadable());
-
-    for (FieldInfo& fi : field_infos_)
-    {
-        if (fi.printProperties().hasHIDE()) continue;
-
-        string display_unit_s = unitToStringUpperCase(fi.displayUnit());
-        string var = fi.vname();
-        std::transform(var.begin(), var.end(), var.begin(), ::toupper);
-        if (fi.xuantity() == Quantity::Text)
+        if (t->about.device != "")
         {
-            string envvar = "METER_"+var+"="+getStringValue(&fi);
-            envs->push_back(envvar);
+            s += ","+newline;
+            s += indent+"\"device\":\""+t->about.device+"\","+newline;
+            s += indent+"\"rssi_dbm\":"+to_string(t->about.rssi_dbm);
         }
-        else
+        for (string extra_field : meterExtraConstantFields())
         {
-            string envvar = "METER_"+var+"_"+display_unit_s+"="+valueToString(getNumericValue(&fi, fi.displayUnit()), fi.displayUnit());
-            envs->push_back(envvar);
+            s += ","+newline;
+            s += indent+makeQuotedJson(extra_field);
+        }
+        if(extra_constant_fields)
+            for (string extra_field : *extra_constant_fields)
+            {
+                s += ","+newline;
+                s += indent+makeQuotedJson(extra_field);
+            }
+        s += newline;
+        s += "}";
+        *json = s;
+    }
+
+    if(envs)
+    {
+        createMeterEnv(id, envs, extra_constant_fields);
+
+        envs->push_back(string("METER_JSON=")+*json);
+        envs->push_back(string("METER_MEDIA=")+media);
+        envs->push_back(string("METER_TIMESTAMP=")+datetimeOfUpdateRobot());
+        envs->push_back(string("METER_TIMESTAMP_UTC=")+datetimeOfUpdateRobot());
+        envs->push_back(string("METER_TIMESTAMP_UT=")+unixTimestampOfUpdate());
+        envs->push_back(string("METER_TIMESTAMP_LT=")+datetimeOfUpdateHumanReadable());
+
+        for (FieldInfo& fi : field_infos_)
+        {
+            if (fi.printProperties().hasHIDE()) continue;
+
+            string display_unit_s = unitToStringUpperCase(fi.displayUnit());
+            string var = fi.vname();
+            std::transform(var.begin(), var.end(), var.begin(), ::toupper);
+            if (fi.xuantity() == Quantity::Text)
+            {
+                string envvar = "METER_"+var+"="+getStringValue(&fi);
+                envs->push_back(envvar);
+            }
+            else
+            {
+                string envvar = "METER_"+var+"_"+display_unit_s+"="+valueToString(getNumericValue(&fi, fi.displayUnit()), fi.displayUnit());
+                envs->push_back(envvar);
+            }
+        }
+
+        if (t->about.device != "")
+        {
+            envs->push_back(string("METER_DEVICE=")+t->about.device);
+            envs->push_back(string("METER_RSSI_DBM=")+to_string(t->about.rssi_dbm));
         }
     }
-
-    if (t->about.device != "")
-    {
-        envs->push_back(string("METER_DEVICE=")+t->about.device);
-        envs->push_back(string("METER_RSSI_DBM=")+to_string(t->about.rssi_dbm));
-    }
-
 }
 
 void MeterCommonImplementation::setExpectedTPLSecurityMode(TPLSecurityMode tsm)
@@ -2108,20 +1735,14 @@ ELLSecurityMode MeterCommonImplementation::expectedELLSecurityMode()
 
 void detectMeterDrivers(int manufacturer, int media, int version, vector<string> *drivers)
 {
-    bool found = false;
     for (DriverInfo *p : allDrivers())
     {
         if (p->detect(manufacturer, media, version))
         {
             drivers->push_back(p->name().str());
-            found = true;
         }
     }
-    if (!found)
-    {
-        const char *name = findBuiltinDriver(manufacturer, version, media);
-        if (name) drivers->push_back(name);
-    }
+
 }
 
 bool isMeterDriverValid(DriverName driver_name, int manufacturer, int media, int version)
@@ -2202,15 +1823,14 @@ shared_ptr<Meter> createMeter(MeterInfo *mi)
         {
             newm->setSelectedFields(di->defaultFields());
         }
-        if (isVerboseEnabled())
-        {
-            string aesc = AddressExpression::concat(mi->address_expressions);
-            verbose("(meter) created %s %s %s %s\n",
-                    mi->name.c_str(),
-                    di->name().str().c_str(),
-                    aesc.c_str(),
-                    keymsg);
-        }
+        
+        string aesc = AddressExpression::concat(mi->address_expressions);
+        verbose("(meter) created %s %s %s %s\n",
+                mi->name.c_str(),
+                di->name().str().c_str(),
+                aesc.c_str(),
+                keymsg);
+        
         return newm;
     }
 
@@ -2304,19 +1924,6 @@ bool MeterInfo::parse(string n, string d, string aes, string k)
         if (!driverextras_checked && is_driver_and_extras(p, &driver_name, &extras))
         {
             driverextras_checked = true;
-        }
-        else if (!bus_checked && isValidAlias(p) && !isValidBps(p) && !isValidLinkModes(p))
-        {
-            driverextras_checked = true;
-            bus_checked = true;
-            bus = p;
-        }
-        else if (!bps_checked && isValidBps(p) && !isValidLinkModes(p))
-        {
-            driverextras_checked = true;
-            bus_checked = true;
-            bps_checked = true;
-            bps = atoi(p.c_str());
         }
         else if (!link_modes_checked && isValidLinkModes(p))
         {
@@ -2461,11 +2068,7 @@ bool FieldInfo::extractNumeric(Meter *m, Telegram *t, DVEntry *dve)
     assert(dve != NULL);
     assert(key == "" || dve->dif_vif_key.str() == key);
 
-    string field_name;
-    if (isDebugEnabled())
-    {
-        field_name = generateFieldNameWithUnit(m, dve);
-    }
+    string field_name = generateFieldNameWithUnit(m, dve);
 
     double extracted_double_value = NAN;
 
@@ -2523,7 +2126,7 @@ bool FieldInfo::extractNumeric(Meter *m, Telegram *t, DVEntry *dve)
             decoded_unit = display_unit_;
         }
         m->setNumericValue(this, dve, display_unit_, convert(extracted_double_value, decoded_unit, display_unit_));
-        t->addMoreExplanation(dve->offset, renderJson(m, dve));
+        // t->addMoreExplanation(dve->offset, renderJson(m, dve));
         found = true;
     }
     return found;
@@ -2532,7 +2135,7 @@ bool FieldInfo::extractNumeric(Meter *m, Telegram *t, DVEntry *dve)
 static string add_tpl_status(string existing_status, Meter *m, Telegram *t)
 {
     string status = m->decodeTPLStatusByte(t->tpl_sts);
-    t->addMoreExplanation(t->tpl_sts_offset, "(%s)", status.c_str());
+    // t->addMoreExplanation(t->tpl_sts_offset, "(%s)", status.c_str());
     if (status != "OK")
     {
         if (existing_status != "OK")
@@ -2640,7 +2243,7 @@ bool FieldInfo::extractString(Meter *m, Telegram *t, DVEntry *dve)
         if (found)
         {
             m->setStringValue(this, translated_bits, dve);
-            t->addMoreExplanation(dve->offset, renderJsonText(m, dve));
+            // t->addMoreExplanation(dve->offset, renderJsonText(m, dve));
         }
     }
     else if (matcher_.vif_range == VIFRange::DateTime)
@@ -2659,7 +2262,7 @@ bool FieldInfo::extractString(Meter *m, Telegram *t, DVEntry *dve)
             extracted_device_date_time = strdatetime(&datetime);
         }
         m->setStringValue(this, extracted_device_date_time, dve);
-        t->addMoreExplanation(dve->offset, renderJsonText(m, dve));
+        // t->addMoreExplanation(dve->offset, renderJsonText(m, dve));
         found = true;
     }
     else if (matcher_.vif_range == VIFRange::Date)
@@ -2668,7 +2271,7 @@ bool FieldInfo::extractString(Meter *m, Telegram *t, DVEntry *dve)
         dve->extractDate(&date);
         string extracted_device_date = strdate(&date);
         m->setStringValue(this, extracted_device_date, dve);
-        t->addMoreExplanation(dve->offset, renderJsonText(m, dve));
+        // t->addMoreExplanation(dve->offset, renderJsonText(m, dve));
         found = true;
     }
     else if (matcher_.vif_range == VIFRange::Any ||
@@ -2688,7 +2291,7 @@ bool FieldInfo::extractString(Meter *m, Telegram *t, DVEntry *dve)
         string extracted_id;
         dve->extractReadableString(&extracted_id);
         m->setStringValue(this, extracted_id, dve);
-        t->addMoreExplanation(dve->offset, renderJsonText(m, dve));
+        // t->addMoreExplanation(dve->offset, renderJsonText(m, dve));
         found = true;
     }
     else
@@ -3299,14 +2902,4 @@ LIST_OF_METER_TYPES
     // Remove last ,
     available_meter_types_[strlen(available_meter_types_)-1] = 0;
     return available_meter_types_;
-}
-
-void MeterCommonImplementation::setMeterManager(MeterManager *mm)
-{
-    meter_manager_ = mm;
-}
-
-MeterManager *MeterCommonImplementation::meterManager()
-{
-    return meter_manager_;
 }

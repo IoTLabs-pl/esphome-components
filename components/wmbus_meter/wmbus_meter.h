@@ -1,5 +1,6 @@
 #pragma once
 #include "esphome/core/component.h"
+#include "esphome/core/helpers.h"
 
 #include "esphome/components/time/real_time_clock.h"
 
@@ -19,18 +20,22 @@ namespace esphome
 
             void dump_config() override;
 
-            void on_update(std::function<void(Telegram *, ::Meter *)> callback);
+            void on_telegram(std::function<void()> &&callback);
+
+            std::string as_json(bool pretty_print = false);
+            optional<std::string> get_string_field(std::string field_name);
+            optional<float> get_numeric_field(std::string field_name);
 
         protected:
-            std::string key;
-
             time::RealTimeClock *rtc;
-
             wmbus_radio::Radio *radio;
 
             std::shared_ptr<::Meter> meter;
+            std::unique_ptr<Telegram> last_telegram;
 
-            void handle_packet(wmbus_radio::Packet *packet);
+            CallbackManager<void()> on_telegram_callback_manager;
+
+            bool handle_packet(wmbus_radio::Packet *packet);
         };
     }
 }

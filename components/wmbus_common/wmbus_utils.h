@@ -19,7 +19,6 @@
 #define WMBUS_UTILS_H
 
 #include "util.h"
-#include "threads.h"
 #include "wmbus.h"
 
 bool decrypt_ELL_AES_CTR(Telegram *t, vector<uchar> &frame, vector<uchar>::iterator &pos, vector<uchar> &aeskey);

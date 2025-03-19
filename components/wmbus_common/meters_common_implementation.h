@@ -20,7 +20,6 @@
 
 #include"dvparser.h"
 #include"meters.h"
-#include"threads.h"
 #include"units.h"
 
 #include<map>
@@ -85,8 +84,6 @@ struct MeterCommonImplementation : public virtual Meter
 
     static bool isTelegramForMeter(Telegram *t, Meter *meter, MeterInfo *mi);
     MeterKeys *meterKeys();
-    void setMeterManager(MeterManager *mm);
-    MeterManager *meterManager();
 
     MeterCommonImplementation(MeterInfo &mi, DriverInfo &di);
 
@@ -163,9 +160,6 @@ protected:
         string help,
         PrintProperties print_properties);
 
-    // The default implementation of poll does nothing.
-    // Override for mbus meters that need to be queried and likewise for C2/T2 wmbus-meters.
-    void poll(shared_ptr<BusManager> bus);
     bool handleTelegram(AboutTelegram &about, vector<uchar> frame,
                         bool simulated, std::vector<Address> *addresses,
                         bool *id_match, Telegram *out_analyzed = NULL);
@@ -231,7 +225,6 @@ private:
     string name_;
     vector<AddressExpression> address_expressions_;
     IdentityMode identity_mode_;
-    vector<function<void(Telegram*,Meter*)>> on_update_;
     int num_updates_ {};
     time_t datetime_of_update_ {};
     time_t datetime_of_poll_ {};
@@ -244,7 +237,6 @@ private:
     int force_mfct_index_ = -1;
     bool has_process_content_ = false;
     bool has_received_first_telegram_ = false;
-    MeterManager *meter_manager_ {};
 
 protected:
 
@@ -261,8 +253,6 @@ protected:
     std::map<pair<std::string,Unit>,NumericField> numeric_values_;
     // Map field name (at_date) to string value.
     std::map<std::string,StringField> string_values_;
-    // Used to block next poll, until this poll has received a respones.
-    Semaphore waiting_for_poll_response_sem_;
     // If the telegram ends with 0x1f then set this to true, and the poll
     // code will poll again with 0x7b instead of 0x5b.
     bool more_records_follow_;

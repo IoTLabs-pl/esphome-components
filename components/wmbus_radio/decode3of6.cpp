@@ -45,13 +45,14 @@ namespace esphome
         auto bit_offset = bit_idx % 8;
 
         uint8_t code = (data[byte_idx] << bit_offset);
-        code |= (data[byte_idx + 1] >> (8 - bit_offset));
+        if (bit_offset > 0)
+          code |= (data[byte_idx + 1] >> (8 - bit_offset));
         code >>= 2;
 
         auto it = lookupTable.find(code);
         if (it == lookupTable.end())
         {
-          ESP_LOGW(TAG, "Invalid code: 0x%02X", code);
+          // ESP_LOGW(TAG, "Invalid code: 0x%02X", code);
           return {};
         }
 

@@ -16,16 +16,12 @@
 */
 
 #include"aescmac.h"
-#include"sha256.h"
-#include"timings.h"
 #include"wmbus.h"
-#include"wmbus_common_implementation.h"
 #include"wmbus_utils.h"
 #include"dvparser.h"
 #include"manufacturer_specificities.h"
 #include<assert.h>
 #include<cmath>
-#include<semaphore.h>
 #include<stdarg.h>
 #include<string.h>
 #include<sys/stat.h>
@@ -389,63 +385,6 @@ void Telegram::printTPL()
     verbose("\n");
 }
 
-// Store the hashes of the last 10 telegrams here.
-deque<SHA256_HASH> seen_telegrams;
-
-bool seen_this_telegram_before(vector<uchar> &frame)
-{
-    SHA256_HASH hash;
-    Sha256Calculate(safeButUnsafeVectorPtr(frame), frame.size(), &hash);
-
-    auto i = std::find(seen_telegrams.begin(), seen_telegrams.end(), hash);
-
-    if (i != seen_telegrams.end())
-    {
-        // Found it!
-        return true;
-    }
-
-    if (seen_telegrams.size() >= 10)
-    {
-        seen_telegrams.pop_front();
-    }
-    seen_telegrams.push_back(hash);
-
-    return false;
-}
-
-// Store the dll_a (6 bytes composed of 4 id + 1 ver + 1 media )
-// for telegrams that has been warned about!
-deque<vector<uchar>> warning_printed_for_telegrams;
-
-bool warned_for_telegram_before(Telegram *t, vector<uchar> &dll_a)
-{
-    auto i = std::find(warning_printed_for_telegrams.begin(), warning_printed_for_telegrams.end(), dll_a);
-
-    if (i != warning_printed_for_telegrams.end())
-    {
-        // Found it!
-        if (t->triggered_warning)
-        {
-            // This is another warning for the same telegram, that triggered the first warning.
-            // We want to print all warnings for the first telegram, return false to print it.
-            return false;
-        }
-        // This is a second telegram, ie not the telegram that triggered the first warning.
-        // So lets report true, because we have warned for this telegram id before.
-        return true;
-    }
-
-    // Limit size of memory to 100 odd meters...
-    if (warning_printed_for_telegrams.size() >= 100)
-    {
-        warning_printed_for_telegrams.pop_front();
-    }
-    warning_printed_for_telegrams.push_back(dll_a);
-    // Print all warnings for this telegram.
-    t->triggered_warning = true;
-    return false;
-}
 
 string manufacturer(int m_field) {
     for (auto &m : manufacturers_) {
@@ -777,32 +716,32 @@ string ciType(int ci_field)
 
 void Telegram::addExplanationAndIncrementPos(vector<uchar>::iterator &pos, int len, KindOfData k, Understanding u, const char* fmt, ...)
 {
-    char buf[1024];
-    buf[1023] = 0;
+    // char buf[1024];
+    // buf[1023] = 0;
 
-    va_list args;
-    va_start(args, fmt);
-    vsnprintf(buf, 1023, fmt, args);
-    va_end(args);
+    // va_list args;
+    // va_start(args, fmt);
+    // vsnprintf(buf, 1023, fmt, args);
+    // va_end(args);
 
-    Explanation e(parsed.size(), len, buf, k, u);
-    explanations.push_back(e);
-    parsed.insert(parsed.end(), pos, pos+len);
+    // Explanation e(parsed.size(), len, buf, k, u);
+    // explanations.push_back(e);
+    // parsed.insert(parsed.end(), pos, pos+len);
     pos += len;
 }
 
 void Telegram::setExplanation(vector<uchar>::iterator &pos, int len, KindOfData k, Understanding u, const char* fmt, ...)
 {
-    char buf[1024];
-    buf[1023] = 0;
+    // char buf[1024];
+    // buf[1023] = 0;
 
-    va_list args;
-    va_start(args, fmt);
-    vsnprintf(buf, 1023, fmt, args);
-    va_end(args);
+    // va_list args;
+    // va_start(args, fmt);
+    // vsnprintf(buf, 1023, fmt, args);
+    // va_end(args);
 
-    Explanation e(distance(frame.begin(),pos), len, buf, k, u);
-    explanations.push_back(e);
+    // Explanation e(distance(frame.begin(),pos), len, buf, k, u);
+    // explanations.push_back(e);
 }
 
 void Telegram::addMoreExplanation(int pos, string json)
@@ -812,43 +751,43 @@ void Telegram::addMoreExplanation(int pos, string json)
 
 void Telegram::addMoreExplanation(int pos, const char* fmt, ...)
 {
-    char buf[1024];
+    // char buf[1024];
 
-    buf[1023] = 0;
+    // buf[1023] = 0;
 
-    va_list args;
-    va_start(args, fmt);
-    vsnprintf(buf, 1023, fmt, args);
-    va_end(args);
+    // va_list args;
+    // va_start(args, fmt);
+    // vsnprintf(buf, 1023, fmt, args);
+    // va_end(args);
 
-    bool found = false;
-    for (auto& p : explanations) {
-        if (p.pos == pos)
-        {
-            // Append more information.
-            p.info = p.info+buf;
-            // Since we are adding more information, we assume that we have a full understanding.
-            p.understanding = Understanding::FULL;
-            found = true;
-        }
-    }
+    // bool found = false;
+    // for (auto& p : explanations) {
+    //     if (p.pos == pos)
+    //     {
+    //         // Append more information.
+    //         p.info = p.info+buf;
+    //         // Since we are adding more information, we assume that we have a full understanding.
+    //         p.understanding = Understanding::FULL;
+    //         found = true;
+    //     }
+    // }
 
-    if (!found) {
-        debug("(wmbus) warning: cannot find offset %d to add more explanation \"%s\"\n", pos, buf);
-    }
+    // if (!found) {
+    //     debug("(wmbus) warning: cannot find offset %d to add more explanation \"%s\"\n", pos, buf);
+    // }
 }
 
 void Telegram::addSpecialExplanation(int offset, int len, KindOfData k, Understanding u, const char* fmt, ...)
 {
-    char buf[1024];
-    buf[1023] = 0;
+    // char buf[1024];
+    // buf[1023] = 0;
 
-    va_list args;
-    va_start(args, fmt);
-    vsnprintf(buf, 1023, fmt, args);
-    va_end(args);
+    // va_list args;
+    // va_start(args, fmt);
+    // vsnprintf(buf, 1023, fmt, args);
+    // va_end(args);
 
-    explanations.push_back({offset, len, buf, k, u});
+    // explanations.push_back({offset, len, buf, k, u});
 }
 
 bool expectedMore(int line)
@@ -1120,10 +1059,10 @@ bool Telegram::parseELL(vector<uchar>::iterator &pos)
 
             if (parser_warns_)
             {
-                if (!beingAnalyzed() && (isVerboseEnabled() || isDebugEnabled() || !warned_for_telegram_before(this, dll_a)))
+                if (!beingAnalyzed())
                 {
                     // Print this warning only once! Unless you are using verbose or debug.
-                    warning("(wmbus) WARNING! decrypted payload crc failed check, did you use the correct decryption key? "
+                    verbose("(wmbus) WARNING! decrypted payload crc failed check, did you use the correct decryption key? "
                             "%02x%02x payload crc (calculated %02x%02x) "
                             "Permanently ignoring telegrams from id: %02x%02x%02x%02x mfct: (%s) %s (0x%02x) type: %s (0x%02x) ver: 0x%02x\n",
                             ell_pl_crc_b[0], ell_pl_crc_b[1],
@@ -1583,7 +1522,7 @@ bool Telegram::potentiallyDecrypt(vector<uchar>::iterator &pos)
             addExplanationAndIncrementPos(pos, num_encrypted_bytes, KindOfData::CONTENT, Understanding::ENCRYPTED, info.c_str());
             if (parser_warns_)
             {
-                if (!beingAnalyzed() && (isVerboseEnabled() || isDebugEnabled() || !warned_for_telegram_before(this, dll_a)))
+                if (!beingAnalyzed())
                 {
                     // Print this warning only once! Unless you are using verbose or debug.
                     warning("(wmbus) WARNING! no key to decrypt payload! "
@@ -1618,7 +1557,7 @@ bool Telegram::potentiallyDecrypt(vector<uchar>::iterator &pos)
 
             if (parser_warns_)
             {
-                if (!beingAnalyzed() && (isVerboseEnabled() || isDebugEnabled() || !warned_for_telegram_before(this, dll_a)))
+                if (!beingAnalyzed())
                 {
                     // Print this warning only once! Unless you are using verbose or debug.
                     warning("(wmbus) WARNING!! decrypted content failed check, did you use the correct decryption key? "
@@ -1663,7 +1602,7 @@ bool Telegram::potentiallyDecrypt(vector<uchar>::iterator &pos)
         {
             if (parser_warns_)
             {
-                if (!beingAnalyzed() && (isVerboseEnabled() || isDebugEnabled() || !warned_for_telegram_before(this, dll_a)))
+                if (!beingAnalyzed())
                 {
                     // Print this warning only once! Unless you are using verbose or debug.
                     warning("(wmbus) WARNING! telegram mac check failed, did you use the correct decryption key? "
@@ -1719,7 +1658,7 @@ bool Telegram::potentiallyDecrypt(vector<uchar>::iterator &pos)
 
             if (parser_warns_)
             {
-                if (!beingAnalyzed() && (isVerboseEnabled() || isDebugEnabled() || !warned_for_telegram_before(this, dll_a)))
+                if (!beingAnalyzed())
                 {
                     // Print this warning only once! Unless you are using verbose or debug.
                     warning("(wmbus) WARNING!!! decrypted content failed check, did you use the correct decryption key? "
@@ -1975,7 +1914,7 @@ bool Telegram::parseWMBUSHeader(vector<uchar> &input_frame)
     // No need to warn.
     parser_warns_ = false;
     decryption_failed = false;
-    explanations.clear();
+    // explanations.clear();
     suffix_size = 0;
     frame = input_frame;
     vector<uchar>::iterator pos = frame.begin();
@@ -2011,7 +1950,7 @@ bool Telegram::parseWMBUS(vector<uchar> &input_frame, MeterKeys *mk, bool warn)
 
     parser_warns_ = warn;
     decryption_failed = false;
-    explanations.clear();
+    // explanations.clear();
     suffix_size = 0;
     meter_keys = mk;
     assert(meter_keys != NULL);
@@ -2092,7 +2031,7 @@ bool Telegram::parseMBUSHeader(vector<uchar> &input_frame)
     // No need to warn.
     parser_warns_ = false;
     decryption_failed = false;
-    explanations.clear();
+    // explanations.clear();
     suffix_size = 0;
     frame = input_frame;
     vector<uchar>::iterator pos = frame.begin();
@@ -2111,7 +2050,7 @@ bool Telegram::parseMBUS(vector<uchar> &input_frame, MeterKeys *mk, bool warn)
 
     parser_warns_ = warn;
     decryption_failed = false;
-    explanations.clear();
+    // explanations.clear();
     suffix_size = 0;
     meter_keys = mk;
     assert(meter_keys != NULL);
@@ -2149,142 +2088,142 @@ bool Telegram::parseHAN(vector<uchar> &input_frame, MeterKeys *mk, bool warn)
 
 void Telegram::explainParse(string intro, int from)
 {
-    for (auto& p : explanations)
-    {
-        // Protocol or content?
-        const char *c = p.kind == KindOfData::PROTOCOL ? " " : "C";
-        const char *u = "?";
-        if (p.understanding == Understanding::FULL) u = "!";
-        if (p.understanding == Understanding::PARTIAL) u = "p";
-        if (p.understanding == Understanding::ENCRYPTED) u = "E";
-        if (p.understanding == Understanding::COMPRESSED) u = "C";
+    // for (auto& p : explanations)
+    // {
+    //     // Protocol or content?
+    //     const char *c = p.kind == KindOfData::PROTOCOL ? " " : "C";
+    //     const char *u = "?";
+    //     if (p.understanding == Understanding::FULL) u = "!";
+    //     if (p.understanding == Understanding::PARTIAL) u = "p";
+    //     if (p.understanding == Understanding::ENCRYPTED) u = "E";
+    //     if (p.understanding == Understanding::COMPRESSED) u = "C";
 
-        // Do not print ok for understood protocol, it is implicit.
-        // However if a protocol is not full understood then print p or ?.
-        if (p.kind == KindOfData::PROTOCOL && p.understanding == Understanding::FULL) u = " ";
+    //     // Do not print ok for understood protocol, it is implicit.
+    //     // However if a protocol is not full understood then print p or ?.
+    //     if (p.kind == KindOfData::PROTOCOL && p.understanding == Understanding::FULL) u = " ";
 
-        debug("%s %03d %s%s: %s\n", intro.c_str(), p.pos, c, u, p.info.c_str());
-    }
+    //     debug("%s %03d %s%s: %s\n", intro.c_str(), p.pos, c, u, p.info.c_str());
+    // }
 }
 
-string renderAnalysisAsText(vector<Explanation> &explanations, OutputFormat of)
-{
-    string s;
+// string renderAnalysisAsText(vector<Explanation> &explanations, OutputFormat of)
+// {
+//     string s;
 
-    const char *green;
-    const char *yellow;
-    const char *red;
-    const char *reset;
+//     const char *green;
+//     const char *yellow;
+//     const char *red;
+//     const char *reset;
 
-    if (of == OutputFormat::TERMINAL)
-    {
-        green = "\033[0;97m\033[1;42m";
-        yellow = "\033[0;97m\033[0;43m";
-        red = "\033[0;97m\033[0;41m\033[1;37m";
-        reset = "\033[0m";
-    }
-    else if (of == OutputFormat::HTML)
-    {
-        green = "<span style=\"color:white;background-color:#008450;\">";
-        yellow = "<span style=\"color:white;background-color:#efb700;\">";
-        red = "<span style=\"color:white;background-color:#b81d13;\">";
-        reset = "</span>";
-    }
-    else
-    {
-        green = "";
-        yellow = "";
-        red = "";
-        reset = "";
-    }
+//     if (of == OutputFormat::TERMINAL)
+//     {
+//         green = "\033[0;97m\033[1;42m";
+//         yellow = "\033[0;97m\033[0;43m";
+//         red = "\033[0;97m\033[0;41m\033[1;37m";
+//         reset = "\033[0m";
+//     }
+//     else if (of == OutputFormat::HTML)
+//     {
+//         green = "<span style=\"color:white;background-color:#008450;\">";
+//         yellow = "<span style=\"color:white;background-color:#efb700;\">";
+//         red = "<span style=\"color:white;background-color:#b81d13;\">";
+//         reset = "</span>";
+//     }
+//     else
+//     {
+//         green = "";
+//         yellow = "";
+//         red = "";
+//         reset = "";
+//     }
 
-    for (auto& p : explanations)
-    {
-        // Protocol or content?
-        const char *c = p.kind == KindOfData::PROTOCOL ? " " : "C";
-        const char *u = "?";
-        if (p.understanding == Understanding::FULL) u = "!";
-        if (p.understanding == Understanding::PARTIAL) u = "p";
-        if (p.understanding == Understanding::ENCRYPTED) u = "E";
-        if (p.understanding == Understanding::COMPRESSED) u = "C";
+//     for (auto& p : explanations)
+//     {
+//         // Protocol or content?
+//         const char *c = p.kind == KindOfData::PROTOCOL ? " " : "C";
+//         const char *u = "?";
+//         if (p.understanding == Understanding::FULL) u = "!";
+//         if (p.understanding == Understanding::PARTIAL) u = "p";
+//         if (p.understanding == Understanding::ENCRYPTED) u = "E";
+//         if (p.understanding == Understanding::COMPRESSED) u = "C";
 
-        // Do not print ok for understood protocol, it is implicit.
-        // However if a protocol is not full understood then print p or ?.
-        if (p.kind == KindOfData::PROTOCOL && p.understanding == Understanding::FULL) u = " ";
+//         // Do not print ok for understood protocol, it is implicit.
+//         // However if a protocol is not full understood then print p or ?.
+//         if (p.kind == KindOfData::PROTOCOL && p.understanding == Understanding::FULL) u = " ";
 
-        const char *pre;
-        const char *post = reset;
+//         const char *pre;
+//         const char *post = reset;
 
-        if (*u == '!')
-        {
-            pre = green;
-        }
-        else if (*u == 'p')
-        {
-            pre = yellow;
-        }
-        else if (*u == ' ')
-        {
-            pre = "";
-            post = "";
-        }
-        else
-        {
-            pre = red;
-        }
+//         if (*u == '!')
+//         {
+//             pre = green;
+//         }
+//         else if (*u == 'p')
+//         {
+//             pre = yellow;
+//         }
+//         else if (*u == ' ')
+//         {
+//             pre = "";
+//             post = "";
+//         }
+//         else
+//         {
+//             pre = red;
+//         }
 
-        s += tostrprintf("%03d %s%s: %s%s%s\n", p.pos, c, u, pre, p.info.c_str(), post);
-    }
-    return s;
-}
+//         s += tostrprintf("%03d %s%s: %s%s%s\n", p.pos, c, u, pre, p.info.c_str(), post);
+//     }
+//     return s;
+// }
 
-string renderAnalysisAsJson(vector<Explanation> &explanations)
-{
-    return "{ \"TODO\": true }\n";
-}
+// string renderAnalysisAsJson(vector<Explanation> &explanations)
+// {
+//     return "{ \"TODO\": true }\n";
+// }
 
 string Telegram::analyzeParse(OutputFormat format, int *content_length, int *understood_content_length)
 {
-    int u = 0;
-    int l = 0;
+    // int u = 0;
+    // int l = 0;
 
-    sort(explanations.begin(), explanations.end(),
-         [](const Explanation & a, const Explanation & b) -> bool { return a.pos < b.pos; });
+    // sort(explanations.begin(), explanations.end(),
+    //      [](const Explanation & a, const Explanation & b) -> bool { return a.pos < b.pos; });
 
-    // Calculate how much is understood.
-    for (auto& e : explanations)
-    {
-        if (e.kind == KindOfData::CONTENT)
-        {
-            l += e.len;
-            if (e.understanding == Understanding::PARTIAL ||
-                e.understanding == Understanding::FULL)
-            {
-                // Its content and we have at least some understanding.
-                u += e.len;
-            }
-        }
-    }
-    *content_length = l;
-    *understood_content_length = u;
+    // // Calculate how much is understood.
+    // for (auto& e : explanations)
+    // {
+    //     if (e.kind == KindOfData::CONTENT)
+    //     {
+    //         l += e.len;
+    //         if (e.understanding == Understanding::PARTIAL ||
+    //             e.understanding == Understanding::FULL)
+    //         {
+    //             // Its content and we have at least some understanding.
+    //             u += e.len;
+    //         }
+    //     }
+    // }
+    // *content_length = l;
+    // *understood_content_length = u;
 
-    switch(format)
-    {
-    case OutputFormat::PLAIN :
-    case OutputFormat::HTML :
-    case OutputFormat::TERMINAL:
-    {
-        return renderAnalysisAsText(explanations, format);
-        break;
-    }
-    case OutputFormat::JSON:
-        return renderAnalysisAsJson(explanations);
-        break;
-    case OutputFormat::NONE:
-        // Do nothing
-        return "";
-        break;
-    }
+    // switch(format)
+    // {
+    // case OutputFormat::PLAIN :
+    // case OutputFormat::HTML :
+    // case OutputFormat::TERMINAL:
+    // {
+    //     return renderAnalysisAsText(explanations, format);
+    //     break;
+    // }
+    // case OutputFormat::JSON:
+    //     return renderAnalysisAsJson(explanations);
+    //     break;
+    // case OutputFormat::NONE:
+    //     // Do nothing
+    //     return "";
+    //     break;
+    // }
     return "ERROR";
 }
 
@@ -4011,9 +3950,6 @@ string measurementTypeName(MeasurementType mt)
     assert(0);
 }
 
-BusDevice::~BusDevice() {
-}
-
 bool Telegram::findFormatBytesFromKnownMeterSignatures(vector<uchar> *format_bytes)
 {
     bool ok = true;
@@ -4054,79 +3990,6 @@ bool Telegram::findFormatBytesFromKnownMeterSignatures(vector<uchar> *format_byt
     return ok;
 }
 
-BusDeviceCommonImplementation::~BusDeviceCommonImplementation()
-{
-    manager_->listenTo(this->serial(), NULL);
-    manager_->onDisappear(this->serial(), NULL);
-    debug("(wmbus) deleted %s\n", toString(type()));
-}
-
-BusDeviceCommonImplementation::BusDeviceCommonImplementation(string bus_alias,
-                                                     BusDeviceType t,
-                                                     shared_ptr<SerialCommunicationManager> manager,
-                                                     shared_ptr<SerialDevice> serial,
-                                                     bool is_serial)
-    : manager_(manager),
-      bus_alias_(bus_alias),
-      is_serial_(is_serial),
-      is_working_(true),
-      type_(t),
-      serial_(serial),
-      cached_device_id_(""),
-      cached_device_unique_id_(""),
-      command_mutex_("wmbus_command_mutex"),
-      waiting_for_response_sem_("waiting_for_response_sem"),
-      receiving_buffer_mutex_("receiving_buffer_mutex")
-{
-    // Initialize timeout from now.
-    last_received_ = time(NULL);
-    last_reset_ = time(NULL);
-    manager_->listenTo(this->serial(),call(this,processSerialData));
-    manager_->onDisappear(this->serial(),call(this,disconnectedFromDevice));
-}
-
-string BusDeviceCommonImplementation::hr()
-{
-    if (cached_hr_ == "")
-    {
-        cached_hr_ = device()+":"+toString(type())+"["+getDeviceId()+"]";
-    }
-
-    return cached_hr_;
-}
-
-bool BusDeviceCommonImplementation::isSerial()
-{
-    return is_serial_;
-}
-
-void BusDeviceCommonImplementation::markAsNoLongerSerial()
-{
-    // When you override the serial device with a file for an im871a, then
-    // it is no longer a serial device.
-    is_serial_ = false;
-}
-
-BusDeviceType BusDeviceCommonImplementation::type()
-{
-    return type_;
-}
-
-string BusDeviceCommonImplementation::busAlias()
-{
-    return bus_alias_;
-}
-
-void BusDeviceCommonImplementation::onTelegram(function<bool(AboutTelegram&,vector<uchar>)> cb)
-{
-    telegram_listeners_.push_back(cb);
-}
-
-bool BusDeviceCommonImplementation::sendTelegram(LinkMode link_mode, TelegramFormat format, vector<uchar> &content)
-{
-    warning("(bus) Trying to send telegram to bus that has not implemented sending!\n");
-    return false;
-}
 
 static bool ignore_duplicate_telegrams_ = false;
 
@@ -4145,346 +4008,6 @@ void setDetailedFirst(bool df)
 bool getDetailedFirst()
 {
     return detailed_first_;
-}
-
-bool BusDeviceCommonImplementation::handleTelegram(AboutTelegram &about, vector<uchar> frame)
-{
-    bool handled = false;
-    last_received_ = time(NULL);
-
-    assert(frame.size() > 0);
-
-    if (about.type == FrameType::MBUS && frame.size() == 1)
-    {
-        if (frame[0] == 0xe5)
-        {
-            // Ack from meter, currently ignored.
-            return true;
-        }
-        // Something else that we currently do not understand.
-        return false;
-    }
-
-    if (ignore_duplicate_telegrams_ && about.type == FrameType::WMBUS && seen_this_telegram_before(frame))
-    {
-        verbose("(wmbus) skipping already handled telegram leng=%zu.\n", frame.size());
-        return true;
-    }
-
-    if (about.type == FrameType::WMBUS)
-    {
-        size_t expected_len = frame[0]+1;
-        if (frame.size() > 0 && expected_len != frame.size())
-        {
-            warning("(wmbus) telegram length byte (the first) 0x%02x (%d) is probably wrong. Expected 0x%02x (%zu) based on the length of the telegram.\n",
-                    frame[0], frame[0], frame.size()-1, frame.size()-1);
-        }
-    }
-
-    for (auto f : telegram_listeners_)
-    {
-        if (f)
-        {
-            bool h = f(about, frame);
-            if (h) handled = true;
-        }
-    }
-
-    return handled;
-}
-
-void BusDeviceCommonImplementation::protocolErrorDetected()
-{
-    protocol_error_count_++;
-}
-
-void BusDeviceCommonImplementation::resetProtocolErrorCount()
-{
-    protocol_error_count_ = 0;
-}
-
-void BusDeviceCommonImplementation::setLinkModes(LinkModeSet lms)
-{
-    link_modes_ = lms;
-    retrySetLinkModes(lms);
-    link_modes_configured_ = true;
-
-}
-
-void BusDeviceCommonImplementation::retrySetLinkModes(LinkModeSet lms)
-{
-    int tries = 0;
-    for (;;)
-    {
-        bool ok = deviceSetLinkModes(lms);
-        if (ok) break;
-        if (!manager_->isRunning()) break;
-        tries++;
-        if (tries > 3)
-        {
-            string msg = tostrprintf("failed to reset wmbus device %s exiting wmbusmeters", hr().c_str());
-            warning("(wmbus) Permanent error, %s\n", msg.c_str());
-            logAlarm(Alarm::DeviceFailure, msg);
-            manager_->stop();
-        }
-    }
-}
-
-bool BusDeviceCommonImplementation::areLinkModesConfigured()
-{
-    return link_modes_configured_;
-}
-
-void BusDeviceCommonImplementation::setDeviceMode(DeviceMode mode)
-{
-    device_mode_ = mode;
-    deviceSetDeviceMode(mode);
-}
-
-void BusDeviceCommonImplementation::deviceSetDeviceMode(DeviceMode mode)
-{
-}
-
-DeviceMode BusDeviceCommonImplementation::deviceMode()
-{
-    return device_mode_;
-}
-
-LinkModeSet BusDeviceCommonImplementation::protectedGetLinkModes()
-{
-    return link_modes_;
-}
-
-void BusDeviceCommonImplementation::deviceClose()
-{
-}
-
-void BusDeviceCommonImplementation::close()
-{
-    debug("(wmbus) closing....\n");
-    if (serial())
-    {
-        if (serial()->opened() && serial()->working())
-        {
-            debug("(wmbus) yes closing....\n");
-            serial()->close();
-            manager_->removeNonWorking(serial()->device());
-            serial_ = NULL;
-        }
-    }
-
-    // Invoke any other device specific close for this device.
-    deviceClose();
-}
-
-bool BusDeviceCommonImplementation::reset()
-{
-    last_reset_ = time(NULL);
-    bool resetting = false;
-    if (serial())
-    {
-        if (serial()->opened() && serial()->working())
-        {
-            // This is a reset, not an init. Close the serial device.
-            resetting = true;
-            serial()->resetInitiated();
-            serial()->close();
-            notice_timestamp("(wmbus) resetting %s\n", hr().c_str());
-
-            // Give the device 3 seconds to shut down properly.
-            usleep(3000*1000);
-        }
-
-        bool ok = serial()->open(false);
-
-        if (!ok)
-        {
-            // Ouch....
-            return false;
-        }
-    }
-
-    // Invoke any other device specific resets for this device.
-    deviceReset();
-
-    if (resetting)
-    {
-        serial()->resetCompleted();
-    }
-
-    // If init, then no link modes are configured.
-    // If reset, re-initialize the link modes.
-    if (areLinkModesConfigured())
-    {
-        retrySetLinkModes(protectedGetLinkModes());
-    }
-
-    if (resetting)
-    {
-        notice_timestamp("(wmbus) reset completed %s\n", hr().c_str());
-    }
-    return true;
-}
-
-void BusDeviceCommonImplementation::disconnectedFromDevice()
-{
-    if (is_working_)
-    {
-        debug("(wmbus) disconnected %s %s\n", device().c_str(), toString(type()));
-        is_working_ = false;
-    }
-}
-
-bool BusDeviceCommonImplementation::isWorking()
-{
-    return is_working_;
-}
-
-void BusDeviceCommonImplementation::checkStatus()
-{
-    trace("[ALARM] check status\n");
-
-    time_t since_last_reset = time(NULL) - last_reset_;
-    if (reset_timeout_ > 1 &&
-        since_last_reset > reset_timeout_ &&
-        !serial()->checkIfDataIsPending() &&
-        !serial()->readonly())
-    {
-        verbose("(wmbus) regular reset of %s %s\n", device().c_str(), toString(type()));
-        bool ok = reset();
-        if (ok) return;
-        string msg;
-        strprintf(&msg, "failed regular reset of %s %s", device().c_str(), toString(type()));
-        logAlarm(Alarm::RegularResetFailure, msg);
-        return;
-    }
-
-    if (protocol_error_count_ >= 20)
-    {
-        string msg;
-        strprintf(&msg, "too many protocol errors(%d) resetting %s %s", protocol_error_count_, device().c_str(), toString(type()));
-        logAlarm(Alarm::DeviceFailure, msg);
-        bool ok = reset();
-        if (ok)
-        {
-            warning("(wmbus) successfully reset wmbus device\n");
-            resetProtocolErrorCount();
-            return;
-        }
-
-        strprintf(&msg, "failed to reset wmbus device %s %s exiting wmbusmeters", device().c_str(), toString(type()));
-        logAlarm(Alarm::DeviceFailure, msg);
-        manager_->stop();
-        return;
-    }
-
-    time_t now = time(NULL);
-    time_t then = now - timeout_;
-    time_t since = now-last_received_;
-
-    // If no timeout set, just return.
-    if (timeout_ == 0) return;
-
-    if (since < timeout_)
-    {
-        trace("[WMBUS] No timeout since=%d timeout=%d. All ok.\n", since, timeout_);
-        return;
-    }
-
-    last_received_ = time(NULL);
-    debug("(wmbus) updated_last received for %s (%s)\n", toString(type()), device().c_str());
-
-    // The timeout has expired! But is the timeout expected because there should be no activity now?
-    // Also, do not sound the alarm unless we actually have a possible timeout within the expected activity,
-    // otherwise we will always get an alarm when we enter the expected activity period.
-    if (!(isInsideTimePeriod(now, expected_activity_) &&
-          isInsideTimePeriod(then, expected_activity_)))
-    {
-        trace("[WMBUS] hit timeout(%d s) but this is ok, since there is no expected activity.\n", timeout_);
-        return;
-    }
-
-    // Ok, timeout has triggered for real! Deal with it!
-    struct tm nowtm;
-    localtime_r(&now, &nowtm);
-
-    string nowtxt = strdatetime(&nowtm);
-
-    string msg;
-    strprintf(&msg, "%d seconds of inactivity resetting %s %s "
-              "(timeout %ds expected %s now %s)",
-              since, device().c_str(), toString(type()),
-              timeout_, expected_activity_.c_str(), nowtxt.c_str());
-
-    logAlarm(Alarm::DeviceInactivity, msg);
-
-    bool ok = reset();
-    if (ok)
-    {
-        warning("(wmbus) successfully reset wmbus device\n");
-    }
-    else
-    {
-        strprintf(&msg, "failed to reset wmbus device %s %s exiting wmbusmeters", device().c_str(), toString(type()));
-        logAlarm(Alarm::DeviceFailure, msg);
-        manager_->stop();
-    }
-}
-
-void BusDeviceCommonImplementation::setResetInterval(int seconds)
-{
-    reset_timeout_ = seconds;
-}
-
-void BusDeviceCommonImplementation::setTimeout(int seconds, string expected_activity)
-{
-    assert(seconds >= 0);
-
-    timeout_ = seconds;
-    if (expected_activity == "")
-    {
-        expected_activity = "mon-sun(00-23)";
-    }
-    expected_activity_ = expected_activity;
-    if (seconds > 0)
-    {
-        debug("(wmbus) set timeout %s to \"%d\" with expected activity \"%s\"\n", toString(type_), timeout_, expected_activity_.c_str());
-    }
-    else
-    {
-        debug("(wmbus) no alarm (expected activity) for %s\n", toString(type_));
-    }
-}
-
-bool BusDeviceCommonImplementation::waitForResponse(int id)
-{
-    assert(id != 0);
-
-    if (waiting_for_response_id_ != 0)
-    {
-        error("(wmbus) bad internal state tried waitForResponse(%d) but already waiting for %d! Exiting!\n", id, waiting_for_response_id_);
-    }
-
-    waiting_for_response_id_ = id;
-
-    bool ok = waiting_for_response_sem_.wait();
-    if (ok) return true;
-
-    // Ouch, we had a timeout. Reset the waiting for value here.
-    warning("(wmbus device) timeout request id %d\n", waiting_for_response_id_);
-    waiting_for_response_id_ = 0;
-
-    return false;
-}
-
-bool BusDeviceCommonImplementation::notifyResponseIsHere(int id)
-{
-    if (id != waiting_for_response_id_) return false;
-
-    waiting_for_response_id_ = 0;
-    waiting_for_response_sem_.notify();
-
-    return true;
 }
 
 int toInt(TPLSecurityMode tsm)
@@ -5073,38 +4596,6 @@ string decodeTPLStatusByteWithMfct(uchar sts, Translate::Lookup &lookup)
     return s+" "+t;
 }
 
-const char *toString(BusDeviceType t)
-{
-    switch (t)
-    {
-#define X(name,text,tty,rtlsdr,detector) case DEVICE_ ## name: return #text;
-LIST_OF_MBUS_DEVICES
-#undef X
-
-    }
-    return "?";
-}
-
-const char *toLowerCaseString(BusDeviceType t)
-{
-    switch (t)
-    {
-#define X(name,text,tty,rtlsdr,detector) case DEVICE_ ## name: return #text;
-LIST_OF_MBUS_DEVICES
-#undef X
-
-    }
-    return "?";
-}
-
-BusDeviceType toBusDeviceType(string &t)
-{
-#define X(name,text,tty,rtlsdr,detector) if (t == #text) return DEVICE_ ## name;
-LIST_OF_MBUS_DEVICES
-#undef X
-    return DEVICE_UNKNOWN;
-}
-
 bool is_command(string b, string *cmd)
 {
     // Check if CMD(.)
@@ -5112,300 +4603,6 @@ bool is_command(string b, string *cmd)
     if (b.rfind("CMD(", 0) != 0) return false;
     if (b.back() != ')') return false;
     *cmd = b.substr(4, b.length()-5);
-    return true;
-}
-
-bool check_file(string f, bool *is_tty, bool *is_stdin, bool *is_file, bool *is_simulation, bool *is_hex_simulation)
-{
-    *is_tty = *is_stdin = *is_file = *is_simulation = *is_hex_simulation = false;
-    if (f == "stdin")
-    {
-        *is_stdin = true;
-        return true;
-    }
-    if (f == "rtlwmbus" || f == "rlt433")
-    {
-        // Prevent wmbusmeters from finding a file named rtlwmbus or rtl433 since this is probably a usage error.
-        // Most likely the user accidentally created such a file. Without this test the existence of such
-        // a file will confuse the user to no end....
-        return false;
-    }
-    // A hex string becomes a simulation file with a single line containing a telegram defined by the hex string.
-    bool invalid_hex = false;
-    if (isHexStringFlex(f.c_str(), &invalid_hex))
-    {
-        *is_simulation = true;
-        *is_hex_simulation = true;
-        assert(!invalid_hex);
-        return true;
-    }
-    // A command line arguments simulation_xxyyzz.txt is detected as a simulation file.
-    if (checkIfSimulationFile(f.c_str()))
-    {
-        *is_simulation = true;
-        return true;
-    }
-    if (checkCharacterDeviceExists(f.c_str(), false))
-    {
-        *is_tty = true;
-        return true;
-    }
-    if (checkFileExists(f.c_str()))
-    {
-        *is_file = true;
-        return true;
-    }
-    if (f.find("/dev") != string::npos)
-    {
-        // Meter names are forbidden to have slashes in their names.
-        // This is probably a path to /dev/ttyUSB0 that does not exist right now.
-        *is_tty = true;
-        return true;
-    }
-    return false;
-}
-
-bool is_type_id_extras(string t, BusDeviceType *out_type, string *out_id, string *out_extras)
-{
-    // im871a im871a[12345678] im871a(foo=123)
-    // auto
-    // rtlwmbus rtlwmbus[plast123] rtlwmbus(device extras) rtlwmbus[hej](extras)
-    // hex
-    if (t == "auto")
-    {
-        *out_type = BusDeviceType::DEVICE_AUTO;
-        *out_id = "";
-        return true;
-    }
-
-    if (t == "hex")
-    {
-        *out_type = BusDeviceType::DEVICE_HEXTTY;
-        *out_id = "";
-        return true;
-    }
-
-    size_t bs = t.find('[');
-    size_t be = t.find(']');
-
-    size_t ps = t.find('(');
-    size_t pe = t.find(')');
-
-    size_t te = 0; // Position after type end.
-
-    bool found_brackets = (bs != string::npos && be != string::npos);
-    bool found_parentheses = (ps != string::npos && pe != string::npos);
-
-    if (!found_brackets && !found_parentheses)
-    {
-        // No brackets nor parentheses found, is t a known wmbus device? like im871a amb8465 etc....
-        BusDeviceType tt = toBusDeviceType(t);
-        if (tt == DEVICE_UNKNOWN) return false;
-        *out_type = toBusDeviceType(t);
-        *out_id = "";
-        return true;
-    }
-
-    if (found_brackets && !found_parentheses)
-    {
-        // Bracketed id must be last.
-        if (! (bs > 0 && bs < be && be == t.length()-1)) return false;
-        te = bs;
-    }
-
-    if (found_brackets && found_parentheses)
-    {
-        // Bracketed id must be second last. Parentheses immediately after bracket.
-        if (! (bs > 0 && bs < be &&
-               ps == be+1 && ps < pe &&
-               pe == t.length()-1)) return false;
-        te = bs;
-    }
-
-    if (!found_brackets && found_parentheses)
-    {
-        // Parentheses must be last.
-        if (! (ps > 0 && ps < pe && pe == t.length()-1)) return false;
-        te = ps;
-    }
-
-    string type = t.substr(0, te);
-    BusDeviceType tt = toBusDeviceType(type);
-    if (tt == DEVICE_UNKNOWN) return false;
-    *out_type = toBusDeviceType(type);
-
-    if (found_brackets)
-    {
-        string id = t.substr(bs+1, be-bs-1);
-        *out_id = id;
-    }
-
-    if (found_parentheses)
-    {
-        string extras = t.substr(ps+1, pe-ps-1);
-        *out_extras = extras;
-    }
-
-    return true;
-}
-
-void SpecifiedDevice::clear()
-{
-    file = "";
-    type = BusDeviceType::DEVICE_UNKNOWN;
-    id = "";
-    extras = "";
-    fq = "";
-    linkmodes.clear();
-}
-
-string SpecifiedDevice::str()
-{
-    string r;
-    if (bus_alias != "")
-    {
-        r += bus_alias+"=";
-    }
-    if (file != "") r += file+":";
-    if (hex != "") r += "<"+hex+">:";
-    if (type != BusDeviceType::DEVICE_UNKNOWN)
-    {
-        r += toString(type);
-        if (id != "")
-        {
-            r += "["+id+"]";
-        }
-        if (extras != "")
-        {
-            r += "("+extras+")";
-        }
-        r += ":";
-    }
-    if (bps != "") r += bps+":";
-    if (fq != "") r += fq+":";
-    if (!linkmodes.empty()) r += linkmodes.hr()+":";
-    if (command != "") r += "CMD("+command+"):";
-
-    if (r.size() > 0) r.pop_back();
-
-    if (r == "") return "auto";
-
-    return r;
-}
-
-bool SpecifiedDevice::isLikelyDevice(string &arg)
-{
-    // Check that it is not a send bus content command.
-    if (SendBusContent::isLikely(arg)) return false;
-    // Only devices are allowed to contain colons.
-    // Devices usually contain a colon!
-    if (arg.find(":") != string::npos) return true;
-    return false;
-}
-
-bool SpecifiedDevice::parse(string &arg)
-{
-    clear();
-
-    size_t ep = arg.find("=");
-    if (ep != string::npos)
-    {
-        // Is there an bus alias first?
-        // BUS1=/dev/ttyUSB0
-        bus_alias = arg.substr(0, ep);
-        if (isValidAlias(bus_alias))
-        {
-            arg = arg.substr(ep+1);
-        }
-        else
-        {
-            bus_alias = "";
-        }
-    }
-
-    bool file_checked = false;
-    bool typeidextras_checked = false;
-    bool bps_checked = false;
-    bool fq_checked = false;
-    bool linkmodes_checked = false;
-    bool command_checked = false;
-
-    // The : colon is forbidden inside the parts, except inside CMD(..:..)
-    vector<string> parts = splitDeviceString(arg);
-
-    // Most maxed out device spec, though not valid, since file+cmd is not allowed.
-    // Example /dev/ttyUSB0:im871a[12345678](device=extras):9600:868.95M:c1,t1:CMD(rtl_433 -F csv -f 123M)
-
-    //         file         type   id        bps  fq     linkmodes command
-    for (auto& p : parts)
-    {
-        if (file_checked && typeidextras_checked && file == "" && type == BusDeviceType::DEVICE_UNKNOWN && id == "")
-        {
-            // There must be either a file and/or type(id). If none are found,
-            // then the specified device string is faulty.
-            return false;
-        }
-        if (!file_checked && check_file(p, &is_tty, &is_stdin, &is_file, &is_simulation, &is_hex_simulation))
-        {
-            file_checked = true;
-            if (!is_hex_simulation)
-            {
-                file = p;
-            }
-            else
-            {
-                hex = p;
-            }
-        }
-        else if (!typeidextras_checked && is_type_id_extras(p, &type, &id, &extras))
-        {
-            file_checked = true;
-            typeidextras_checked = true;
-        }
-        else if (!bps_checked && isValidBps(p))
-        {
-            file_checked = true;
-            typeidextras_checked = true;
-            bps_checked = true;
-            bps = p;
-        }
-        else if (!fq_checked && isFrequency(p))
-        {
-            file_checked = true;
-            typeidextras_checked = true;
-            bps_checked = true;
-            fq_checked = true;
-            fq = p;
-        }
-        else if (!linkmodes_checked && isValidLinkModes(p))
-        {
-            file_checked = true;
-            typeidextras_checked = true;
-            bps_checked = true;
-            fq_checked = true;
-            linkmodes_checked = true;
-            linkmodes = parseLinkModes(p);
-        }
-        else if (!command_checked && is_command(p, &command))
-        {
-            file_checked = true;
-            typeidextras_checked = true;
-            bps_checked = true;
-            fq_checked = true;
-            linkmodes_checked = true;
-            command_checked = true;
-        }
-        else
-        {
-            // Unknown part....
-            return false;
-        }
-    }
-
-    // Auto is only allowed to be combined with linkmodes and/or frequencies!
-    if (type == BusDeviceType::DEVICE_AUTO && (file != "" || bps != "")) return false;
-    // You cannot combine a file with a command.
-    if (file != "" && command != "") return false;
     return true;
 }
 
@@ -5489,260 +4686,6 @@ bool SendBusContent::parse(const string &s)
     if (content.size() % 2 == 1) return false;
 
     return true;
-}
-
-Detected detectBusDeviceOnTTY(string tty,
-                              set<BusDeviceType> probe_for,
-                              LinkModeSet desired_linkmodes,
-                              shared_ptr<SerialCommunicationManager> handler)
-{
-    Detected detected;
-    // Fake a specified device.
-    detected.found_file = tty;
-    detected.specified_device.is_tty = true;
-    detected.specified_device.linkmodes = desired_linkmodes;
-
-    bool has_auto = probe_for.count(BusDeviceType::DEVICE_AUTO);
-
-    AccessCheck ac = handler->checkAccess(tty, handler);
-    if (ac != AccessCheck::AccessOK)
-    {
-        // Oups, some low level problem (permissions/groups etc) that means that we will not
-        // be able to talk to the device. Lets stop here.
-        return detected;
-    }
-
-    // If im87a is tested first, a delay of 1s must be inserted
-    // before amb8465/3665 is tested, lest it will not respond properly.
-    // It really should not matter, but perhaps is the uart of the amber
-    // confused by the 57600 speed....or maybe there is some other reason.
-    // Anyway by testing for the amb8465/3665 first, we can immediately continue
-    // with the test for the im871a, without the need for a 1s delay.
-
-    // Talk amb8465 with it...
-    // assumes this device is configured for 9600 bps, which seems to be the default.
-    if (has_auto || probe_for.count(BusDeviceType::DEVICE_AMB8465) || probe_for.count(BusDeviceType::DEVICE_AMB3665))
-    {
-        if (detectAMB8465AMB3665(&detected, handler) == AccessCheck::AccessOK)
-        {
-            return detected;
-        }
-    }
-
-    // Talk im871a with it...
-    // assumes this device is configured for 57600 bps, which seems to be the default.
-    if (has_auto || probe_for.count(BusDeviceType::DEVICE_IM871A) || probe_for.count(BusDeviceType::DEVICE_IM170A))
-    {
-        if (detectIM871AIM170A(&detected, handler) == AccessCheck::AccessOK)
-        {
-            return detected;
-        }
-    }
-
-    // Talk RC1180 with it...
-    // assumes this device is configured for 19200 bps, which seems to be the default.
-    if (has_auto || probe_for.count(BusDeviceType::DEVICE_RC1180))
-    {
-        if (detectRC1180(&detected, handler) == AccessCheck::AccessOK)
-        {
-            return detected;
-        }
-    }
-
-    // Talk CUL with it...
-    // assumes this device is configured for 38400 bps, which seems to be the default.
-    if (has_auto || probe_for.count(BusDeviceType::DEVICE_CUL))
-    {
-        if (detectCUL(&detected, handler) == AccessCheck::AccessOK)
-        {
-            return detected;
-        }
-    }
-
-    // Talk iu891a with it...
-    // assumes this device is configured for 115200 bps, which seems to be the default.
-    if (has_auto || probe_for.count(BusDeviceType::DEVICE_IU891A))
-    {
-        if (detectIU891A(&detected, handler) == AccessCheck::AccessOK)
-        {
-            return detected;
-        }
-    }
-
-    // We could not auto-detect either. default is DEVICE_UNKNOWN.
-    return detected;
-}
-
-Detected detectBusDeviceWithFileOrHex(SpecifiedDevice &specified_device,
-                                      LinkModeSet default_linkmodes,
-                                      shared_ptr<SerialCommunicationManager> handler)
-{
-    assert(specified_device.file != "" || specified_device.hex != "");
-    assert(specified_device.command == "");
-    debug("(lookup) with file/hex \"%s%s\" %s\n", specified_device.file.c_str(), specified_device.hex.c_str(),
-          toString(specified_device.type));
-
-    Detected detected;
-    detected.found_file = specified_device.file;
-    detected.found_hex = specified_device.hex;
-    detected.setSpecifiedDevice(specified_device);
-    // If <device>:c1 is missing :c1 then use --c1.
-    LinkModeSet lms = specified_device.linkmodes;
-    if (lms.empty())
-    {
-        lms = default_linkmodes;
-    }
-    if (specified_device.is_simulation)
-    {
-        debug("(lookup) driver: simulation %s\n", specified_device.hex != "" ? "hex" : "file");
-        // A simulation file/hex has a lms of all by default, eg no simulation_foo.txt:t1 nor --t1
-        if (specified_device.linkmodes.empty()) lms.setAll();
-        detected.setAsFound("", DEVICE_SIMULATION, 0 , false, lms);
-        return detected;
-    }
-
-    // Special case to cater for /dev/ttyUSB0:9600, ie the rawtty is implicit.
-    if (specified_device.type == BusDeviceType::DEVICE_UNKNOWN && specified_device.bps != "" && specified_device.is_tty)
-    {
-        debug("(lookup) driver: rawtty\n");
-        // A rawtty has a lms of all by default, eg no simulation_foo.txt:t1 nor --t1
-        if (specified_device.linkmodes.empty()) lms.setAll();
-        detected.setAsFound("", DEVICE_RAWTTY, atoi(specified_device.bps.c_str()), false, lms);
-        return detected;
-    }
-
-    // Special case to cater for /dev/ttyUSB0:mbus:2400, ie an mbus master device.
-    if (specified_device.type == BusDeviceType::DEVICE_MBUS)
-    {
-        debug("(lookup) driver: mbus\n");
-        int bps = atoi(specified_device.bps.c_str());
-        if (bps < 300)
-        {
-            // Default to 2400. This will be adjusted every time the meters are probed.
-            bps = 2400;
-        }
-        detected.setAsFound("", DEVICE_MBUS, bps, false, lms);
-        return detected;
-    }
-
-    // Special case to cater for raw_data.bin, ie the rawtty is implicit.
-    if (specified_device.type == BusDeviceType::DEVICE_UNKNOWN && !specified_device.is_tty)
-    {
-        debug("(lookup) driver: raw file\n");
-        // A rawtty has a lms of all by default, eg no simulation_foo.txt:t1 nor --t1
-        if (specified_device.linkmodes.empty()) lms.setAll();
-        detected.setAsFound("", DEVICE_RAWTTY, 0, true, lms);
-        return detected;
-    }
-
-    // Now handle all files (ie not ttys) with specified type.
-    if (specified_device.type != BusDeviceType::DEVICE_UNKNOWN &&
-        specified_device.type != BusDeviceType::DEVICE_AUTO &&
-        !specified_device.is_tty)
-    {
-        debug("(lookup) driver: %s\n", toString(specified_device.type));
-        assert(!lms.empty());
-        detected.setAsFound("", specified_device.type, 0, specified_device.is_file || specified_device.is_stdin, lms);
-        return detected;
-    }
-    // Ok, we are left with a single /dev/ttyUSB0 lets talk to it
-    // to figure out what is connected to it.
-    LinkModeSet desired_linkmodes = lms;
-    if (specified_device.type == BusDeviceType::DEVICE_UNKNOWN)
-    {
-        error("You have to specify the expected device type for the tty %s\n",
-              specified_device.file.c_str());
-    }
-
-    set<BusDeviceType> probe_for = { specified_device.type };
-
-    Detected d = detectBusDeviceOnTTY(specified_device.file, probe_for, desired_linkmodes, handler);
-    if (specified_device.type != d.found_type &&
-        specified_device.type != DEVICE_UNKNOWN)
-    {
-        warning("Expected %s on %s but did not find it! Ignoring tty!\n",
-                toLowerCaseString(specified_device.type),
-                specified_device.file.c_str());
-
-        d.found_file = specified_device.file;
-        d.found_type = BusDeviceType::DEVICE_UNKNOWN;
-    }
-    else
-    {
-        d.specified_device = specified_device;
-    }
-    return d;
-}
-
-Detected detectBusDeviceWithCommand(SpecifiedDevice &specified_device,
-                                    LinkModeSet default_linkmodes,
-                                    shared_ptr<SerialCommunicationManager> handler)
-{
-    assert(specified_device.file == "");
-    assert(specified_device.command != "");
-    debug("(lookup) with cmd \"%s\"\n", specified_device.str().c_str());
-
-    Detected detected;
-    detected.setSpecifiedDevice(specified_device);
-    LinkModeSet lms = specified_device.linkmodes;
-    // If the specified device did not set any linkmodes fall back on the default linkmodes.
-    if (lms.empty()) lms = default_linkmodes;
-    detected.setAsFound("", specified_device.type, 0, false, lms);
-
-    return detected;
-}
-
-AccessCheck detectUNKNOWN(Detected *detected, shared_ptr<SerialCommunicationManager> handler)
-{
-    return AccessCheck::NoSuchDevice;
-}
-
-AccessCheck detectSKIP(Detected *detected, shared_ptr<SerialCommunicationManager> handler)
-{
-    return AccessCheck::NoSuchDevice;
-}
-
-AccessCheck detectSIMULATION(Detected *detected, shared_ptr<SerialCommunicationManager> handler)
-{
-    return AccessCheck::NoSuchDevice;
-}
-
-AccessCheck detectAUTO(Detected *detected, shared_ptr<SerialCommunicationManager> handler)
-{
-    // Detection of auto is currently not implemented here, but elsewhere.
-    return AccessCheck::NoSuchDevice;
-}
-
-AccessCheck reDetectDevice(Detected *detected, shared_ptr<SerialCommunicationManager> handler)
-{
-    BusDeviceType type = detected->specified_device.type;
-
-#define X(name,text,tty,rtlsdr,detector) if (type == BusDeviceType::DEVICE_ ## name) return detector(detected,handler);
-LIST_OF_MBUS_DEVICES
-#undef X
-
-    assert(0);
-    return AccessCheck::NoSuchDevice;
-}
-
-bool usesRTLSDR(BusDeviceType t)
-{
-#define X(name,text,tty,rtlsdr,detector) if (t == BusDeviceType::DEVICE_ ## name) return rtlsdr;
-LIST_OF_MBUS_DEVICES
-#undef X
-
-    assert(0);
-    return false;
-}
-
-bool usesTTY(BusDeviceType t)
-{
-#define X(name,text,tty,rtlsdr,detector) if (t == BusDeviceType::DEVICE_ ## name) return tty;
-LIST_OF_MBUS_DEVICES
-#undef X
-
-    assert(0);
-    return false;
 }
 
 const char *toString(FrameType ft)

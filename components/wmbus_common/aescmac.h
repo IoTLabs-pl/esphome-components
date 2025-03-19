@@ -1,5 +1,5 @@
 /*
- Copyright (C) 2024 Fredrik Öhrström (gpl-3.0-or-later)
+ Copyright (C) 2020 Fredrik Öhrström (gpl-3.0-or-later)
 
  This program is free software: you can redistribute it and/or modify
  it under the terms of the GNU General Public License as published by
@@ -15,15 +15,11 @@
  along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-#ifndef DRIVERS_H_
-#define DRIVERS_H_
+#ifndef _AESCMAC_H_
+#define _AESCMAC_H_
 
-#include<string>
+typedef unsigned char uchar;
 
-void prepareBuiltinDrivers();
-void loadDriversFromDir(std::string dir);
-bool loadBuiltinDriver(std::string driver_name);
-void loadAllBuiltinDrivers();
-const char *findBuiltinDriver(uint16_t mfct, uchar ver, uchar type);
+void AES_CMAC (uchar *key, uchar *input, int length, uchar *mac);
 
-#endif
+#endif //_AESCMAC_H_

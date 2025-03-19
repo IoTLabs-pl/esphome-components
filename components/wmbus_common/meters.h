@@ -24,7 +24,6 @@
 #include"util.h"
 #include"units.h"
 #include"translatebits.h"
-#include"xmq.h"
 #include"wmbus.h"
 
 #include<assert.h>
@@ -171,9 +170,6 @@ private:
     vector<string> default_fields_;
     int force_mfct_index_ = -1; // Used for meters not declaring mfct specific data using the dif 0f.
     bool has_process_content_ = false; // Mark this driver as having mfct specific decoding.
-    XMQDoc *dynamic_driver_ {}; // Configuration loaded from driver file.
-    string dynamic_file_name_; // Name of actual loaded driver file.
-    string dynamic_source_xmq_ {}; // A copy of the xmq used to create a dynamic driver.
 
 public:
     ~DriverInfo();
@@ -187,12 +183,6 @@ public:
     void setConstructor(function<shared_ptr<Meter>(MeterInfo&,DriverInfo&)> c) { constructor_ = c; }
     void addDetection(uint16_t mfct, uchar type, uchar ver) { detect_.push_back({ mfct, type, ver }); }
     void usesProcessContent() { has_process_content_ = true; }
-    void setDynamic(const string &file_name, XMQDoc *driver) { dynamic_file_name_ = file_name; dynamic_driver_ = driver; }
-    void setDynamicSource(const string &content) { dynamic_source_xmq_ = content; }
-
-    XMQDoc *getDynamicDriver() { return dynamic_driver_; }
-    const string &getDynamicFileName() { return dynamic_file_name_; }
-    const string &getDynamicSource() { return dynamic_source_xmq_; }
 
     vector<DriverDetect> &detect() { return detect_; }
 
@@ -383,9 +373,6 @@ private:
     bool from_library_ {};
 };
 
-struct BusManager;
-struct MeterManager;
-
 struct Meter
 {
     // Meters are instantiated on the fly from a template, when a telegram arrives
@@ -426,7 +413,6 @@ struct Meter
     virtual std::string getStringValue(FieldInfo *fi) = 0;
     virtual std::string decodeTPLStatusByte(uchar sts) = 0;
 
-    virtual void onUpdate(std::function<void(Telegram*t,Meter*)> cb) = 0;
     virtual int numUpdates() = 0;
 
     virtual void createMeterEnv(string id,
@@ -448,15 +434,12 @@ struct Meter
                                 bool simulated, std::vector<Address> *addresses,
                                 bool *id_match, Telegram *out_t = NULL) = 0;
     virtual MeterKeys *meterKeys() = 0;
-    virtual void setMeterManager(MeterManager *mm) = 0;
-    virtual MeterManager *meterManager() = 0;
 
     virtual void addExtraCalculatedField(std::string ecf) = 0;
     virtual void addShellMeterAdded(std::string cmdline) = 0;
     virtual void addShellMeterUpdated(std::string cmdline) = 0;
     virtual vector<string> &shellCmdlinesMeterAdded() = 0;
     virtual vector<string> &shellCmdlinesMeterUpdated() = 0;
-    virtual void poll(shared_ptr<BusManager> bus) = 0;
 
     virtual FieldInfo *findFieldInfo(string vname, Quantity xuantity) = 0;
     virtual string renderJsonOnlyDefaultUnit(string vname, Quantity xuantity) = 0;
@@ -465,27 +448,6 @@ struct Meter
 
     virtual ~Meter() = default;
 };
-
-struct MeterManager
-{
-    virtual void addMeterTemplate(MeterInfo &mi) = 0;
-    virtual void addMeter(shared_ptr<Meter> meter) = 0;
-    virtual Meter*lastAddedMeter() = 0;
-    virtual void removeAllMeters() = 0;
-    virtual void forEachMeter(std::function<void(Meter*)> cb) = 0;
-    virtual bool handleTelegram(AboutTelegram &about, vector<uchar> data, bool simulated) = 0;
-    virtual bool hasAllMetersReceivedATelegram() = 0;
-    virtual bool hasMeters() = 0;
-    virtual void onTelegram(function<bool(AboutTelegram&,vector<uchar>)> cb) = 0;
-    virtual void whenMeterUpdated(std::function<void(Telegram*t,Meter*)> cb) = 0;
-    virtual void pollMeters(shared_ptr<BusManager> bus) = 0;
-    virtual void analyzeEnabled(bool b, OutputFormat f, string force_driver, string key, bool verbose, int profile) = 0;
-    virtual void analyzeTelegram(AboutTelegram &about, vector<uchar> &input_frame, bool simulated) = 0;
-
-    virtual ~MeterManager() = default;
-};
-
-shared_ptr<MeterManager> createMeterManager(bool daemon);
 
 const char *toString(MeterType type);
 MeterType toMeterType(std::string type);

@@ -10,6 +10,12 @@ namespace esphome
 {
     namespace wmbus_radio
     {
+        struct Packet
+        {
+            std::vector<uint8_t> data;
+            int8_t rssi;
+        };
+
         size_t packetSize(uint8_t l_field);
         size_t get_packet_size(std::vector<unsigned char> &preamble);
     }

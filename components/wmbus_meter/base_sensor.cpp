@@ -15,8 +15,8 @@ namespace esphome
         void BaseSensor::set_parent(Meter *parent)
         {
             Parented::set_parent(parent);
-            this->parent_->on_update([this](Telegram *telegram, ::Meter *meter)
-                                     { this->handle_update(telegram, meter); });
+            this->parent_->on_telegram([this]()
+                                       { this->handle_update(); });
         }
 
         void BaseSensor::dump_config()

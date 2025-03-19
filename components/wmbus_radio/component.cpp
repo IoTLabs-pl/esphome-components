@@ -3,9 +3,9 @@
 #include "freertos/task.h"
 #include "freertos/queue.h"
 
+#include "esphome/components/wmbus_common/wmbus.h"
+
 #include "decode3of6.h"
-#include "packets.h"
-#include "wmbusmeters.h"
 
 #define ASSERT(expr, expected, before_exit)                       \
   {                                                               \
@@ -28,14 +28,14 @@ namespace esphome
 
     void Radio::setup()
     {
-      ASSERT_SETUP(this->packet_queue_ = xQueueCreate(10, sizeof(Packet *)));
+      ASSERT_SETUP(this->packet_queue_ = xQueueCreate(3, sizeof(Packet *)));
 
       ASSERT_SETUP(xTaskCreate(
           (TaskFunction_t)this->receiver_task,
           "radio_recv",
-          8 * 1024,
+          3 * 1024,
           this,
-          12,
+          2,
           &(this->receiver_task_handle_)));
 
       ESP_LOGE(TAG, "Receiver task created");
@@ -50,21 +50,15 @@ namespace esphome
       if (xQueueReceive(this->packet_queue_, &p, 0) != pdTRUE)
         return;
 
-      std::shared_ptr<Packet> packet(p);
-
-      ESP_LOGI(TAG, "Have data from radio ...");
+      std::unique_ptr<Packet> packet{p};
 
       if (packet->data[0] != WMBUS_MODE_C_PREAMBLE)
       {
         auto decoded = decode3of6(packet->data);
         if (decoded.has_value())
-        {
           packet->data = *decoded;
-        }
       }
-
-      ESP_LOGI(TAG, "%s", format_hex(packet->data).c_str());
-      ESP_LOGI(TAG, "RSSI: %d", packet->rssi);
+      ESP_LOGI(TAG, "Have data from radio (%zu bytes) [RSSI: %d]", packet->data.size(), packet->rssi);
 
       removeAnyDLLCRCs(packet->data);
       int dummy;
@@ -74,7 +68,17 @@ namespace esphome
         return;
       }
 
-      this->packet_callback_manager_.call(packet.get());
+      uint8_t packet_handled = 0;
+      for (auto &handler : this->handlers_)
+        packet_handled += handler(packet.get());
+
+      if (!packet_handled)
+      {
+        ESP_LOGI(TAG, "Valid but not handled packet");
+        ESP_LOGI(TAG, format_hex(packet->data).c_str());
+      }
+      else
+        ESP_LOGI(TAG, "Packet successfully handled by %d handlers", packet_handled);
     }
 
     void Radio::wakeup_receiver_task_from_isr(TaskHandle_t *arg)
@@ -94,16 +98,16 @@ namespace esphome
         ESP_LOGD(TAG, "Radio interrupt timeout");
         return;
       }
+      auto packet = std::make_unique<Packet>();
+      packet->data.resize(WMBUS_PREAMBLE_SIZE);
 
-      std::vector<uint8_t> frame_data(WMBUS_PREAMBLE_SIZE);
-
-      if (!this->radio->read_in_task(frame_data.data(), WMBUS_PREAMBLE_SIZE))
+      if (!this->radio->read_in_task(packet->data.data(), WMBUS_PREAMBLE_SIZE))
       {
         ESP_LOGD(TAG, "Failed to read preamble");
         return;
       }
 
-      auto total_length = get_packet_size(frame_data);
+      auto total_length = get_packet_size(packet->data);
 
       if (total_length == 0)
       {
@@ -111,42 +115,38 @@ namespace esphome
         return;
       }
 
-      frame_data.resize(total_length);
+      packet->data.resize(total_length);
 
-      if (!this->radio->read_in_task(frame_data.data() + WMBUS_PREAMBLE_SIZE, total_length - WMBUS_PREAMBLE_SIZE))
+      if (!this->radio->read_in_task(packet->data.data() + WMBUS_PREAMBLE_SIZE, total_length - WMBUS_PREAMBLE_SIZE))
       {
         ESP_LOGW(TAG, "Failed to read data");
         return;
       }
 
-      auto packet = new Packet{
-          .data = frame_data,
-          .rssi = radio->get_rssi(),
-      };
+      packet->rssi = this->radio->get_rssi();
+      auto packet_ptr = packet.get();
 
-      if (xQueueSend(this->packet_queue_, &packet, 0) != pdTRUE)
-      {
-        ESP_LOGW(TAG, "Queue send failed");
-        delete packet;
-      }
-      else
+      if (xQueueSend(this->packet_queue_, &packet_ptr, 0) == pdTRUE)
       {
         ESP_LOGI(TAG, "Queue items: %zu", uxQueueMessagesWaiting(this->packet_queue_));
         ESP_LOGI(TAG, "Queue send success");
+        packet.release();
       }
+      else
+        ESP_LOGW(TAG, "Queue send failed");
     }
 
     void Radio::receiver_task(Radio *arg)
     {
       ESP_LOGE(TAG, "Hello from radio task!");
-
+      int counter = 0;
       while (true)
         arg->receive_frame();
     }
 
-    void Radio::add_on_packet_callback(std::function<void(Packet *)> &&callback)
+    void Radio::add_packet_handler(std::function<bool(Packet *)> &&callback)
     {
-      this->packet_callback_manager_.add(std::move(callback));
+      this->handlers_.push_back(std::move(callback));
     }
 
   } // namespace wmbus

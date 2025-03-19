@@ -11,7 +11,7 @@ namespace esphome
                            public BaseSensor
         {
         public:
-            void handle_update(Telegram *telegram, ::Meter *meter) override;
+            void handle_update() override;
         };
     }
 }

@@ -11,6 +11,7 @@
 
 #include "esphome/components/spi/spi.h"
 
+#include "packet.h"
 #include "transceiver.h"
 #include "version.h"
 
@@ -18,11 +19,6 @@ namespace esphome
 {
   namespace wmbus_radio
   {
-    struct Packet
-    {
-      std::vector<uint8_t> data;
-      int8_t rssi;
-    };
 
     class Radio : public Component
     {
@@ -33,7 +29,7 @@ namespace esphome
       void loop() override;
       void receive_frame();
 
-      void add_on_packet_callback(std::function<void(Packet*)> &&callback);
+      void add_packet_handler(std::function<bool(Packet *)> &&callback);
 
     protected:
       static void wakeup_receiver_task_from_isr(TaskHandle_t *arg);
@@ -43,7 +39,7 @@ namespace esphome
       TaskHandle_t receiver_task_handle_{nullptr};
       QueueHandle_t packet_queue_{nullptr};
 
-      CallbackManager<void(Packet*)> packet_callback_manager_;
+      std::vector<std::function<bool(Packet *)>> handlers_;
     };
   } // namespace wmbus
 } // namespace esphome
