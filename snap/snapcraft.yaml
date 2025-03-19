@@ -1,0 +1,133 @@
+name: wmbusmeters
+adopt-info: wmbusmeters
+summary: "Program receives and decodes WMBus telegrams"
+description: |
+  The program receives and decodes C1, T1 or S1 telegrams
+  (using the wireless mbus protocol) to acquire utility meter readings.
+  The readings can then be published using MQTT, curled to a REST api,
+  inserted into a database or stored in a log file.
+  Following must be executed "sudo snap connect wmbusmeters:raw-usb core:raw-usb"
+  to allow snap read USB devices and check that root user of your system is
+  added to group that can read USB devices
+
+base: core22
+confinement: strict
+
+architectures:
+  - build-on: amd64
+    build-for: amd64
+
+  - build-on: arm64
+    build-for: arm64
+
+  - build-on: armhf
+    build-for: armhf
+
+parts:
+  script:
+    plugin: dump
+    source: snap/local/
+    prime:
+      - launcher.sh
+
+  wmbusmeters:
+    source: "https://github.com/wmbusmeters/wmbusmeters.git"
+    source-type: git
+    override-pull: |
+      craftctl default
+      if [ -n "$(git describe --tags | grep -E -- '-[^-RC]+$')" ]; then
+        GIT_REV="$(git describe --tags | rev | cut -f2- -d'-' | rev)"
+        craftctl set version="$GIT_REV"
+        craftctl set grade=devel
+      else
+        GIT_VER="$(git describe --tags)"
+        craftctl set version="$GIT_VER"
+        craftctl set grade=stable
+      fi
+    plugin: autotools
+    build-packages:
+      - g++
+      - make
+      - librtlsdr-dev
+      - libxml2-dev
+      - libxslt1-dev
+    stage-packages:
+      - mosquitto-clients
+      - curl
+      - dash
+      - sysvinit-utils
+      - libusb-1.0-0
+      - rtl-sdr
+      - libxml2
+    prime:
+      - sbin/
+      - usr/bin/
+      - usr/lib/
+      - bin/
+      - lib/
+      - etc/wmbusmeters.conf
+
+  rtl-wmbus:
+    source: "https://github.com/weetmuts/rtl-wmbus.git"
+    plugin: make
+    make-parameters:
+      - DESTDIR=/usr
+
+  rtl-433:
+    source: "https://github.com/merbanan/rtl_433.git"
+    plugin: cmake
+    cmake-parameters:
+      - -DCMAKE_INSTALL_PREFIX=/usr
+
+apps:
+  wmbusmeters:
+    command: bin/sh $SNAP/launcher.sh
+    daemon: simple
+    restart-condition: always
+    plugs:
+      - network
+      - network-bind
+      - raw-usb
+      - serial-port
+      - system-observe
+
+layout:
+  /usr/bin/wmbusmeters:
+    bind-file: $SNAP/usr/bin/wmbusmeters
+#rtl
+  /usr/bin/rtl_433:
+    bind-file: $SNAP/usr/bin/rtl_433
+  /usr/bin/rtl_sdr:
+    bind-file: $SNAP/usr/bin/rtl_sdr
+  /usr/bin/rtl_wmbus:
+    bind-file: $SNAP/usr/bin/rtl_wmbus
+  /usr/lib/$CRAFT_ARCH_TRIPLET/librtlsdr.so.0:
+    symlink: $SNAP/usr/lib/$CRAFT_ARCH_TRIPLET/librtlsdr.so.0
+  /usr/lib/$CRAFT_ARCH_TRIPLET/libusb-1.0.so.0:
+    symlink: $SNAP/usr/lib/$CRAFT_ARCH_TRIPLET/libusb-1.0.so.0
+#mosquitto
+  /usr/bin/mosquitto_pub:
+    bind-file: $SNAP/usr/bin/mosquitto_pub
+  /usr/bin/mosquitto_sub:
+    bind-file: $SNAP/usr/bin/mosquitto_sub
+  /usr/lib/$CRAFT_ARCH_TRIPLET/libmosquitto.so.1:
+    symlink: $SNAP/usr/lib/$CRAFT_ARCH_TRIPLET/libmosquitto.so.1
+  /usr/lib/$CRAFT_ARCH_TRIPLET/libcjson.so.1:
+    symlink: $SNAP/usr/lib/$CRAFT_ARCH_TRIPLET/libcjson.so.1
+#curl
+  /usr/bin/curl:
+    bind-file: $SNAP/usr/bin/curl
+  /usr/lib/$CRAFT_ARCH_TRIPLET/libcurl.so.4:
+    symlink: $SNAP/usr/lib/$CRAFT_ARCH_TRIPLET/libcurl.so.4
+  /usr/lib/$CRAFT_ARCH_TRIPLET/libnghttp2.so.14:
+    symlink: $SNAP/usr/lib/$CRAFT_ARCH_TRIPLET/libnghttp2.so.14
+  /usr/lib/$CRAFT_ARCH_TRIPLET/librtmp.so.1:
+    symlink: $SNAP/usr/lib/$CRAFT_ARCH_TRIPLET/librtmp.so.1
+  /usr/lib/$CRAFT_ARCH_TRIPLET/libpsl.so.5:
+    symlink: $SNAP/usr/lib/$CRAFT_ARCH_TRIPLET/libpsl.so.5
+  /usr/lib/$CRAFT_ARCH_TRIPLET/libldap-2.5.so.0:
+    symlink: $SNAP/usr/lib/$CRAFT_ARCH_TRIPLET/libldap-2.5.so.0
+  /usr/lib/$CRAFT_ARCH_TRIPLET/liblber-2.5.so.0:
+    symlink: $SNAP/usr/lib/$CRAFT_ARCH_TRIPLET/liblber-2.5.so.0
+  /usr/lib/$CRAFT_ARCH_TRIPLET/libsasl2.so.2:
+    symlink: $SNAP/usr/lib/$CRAFT_ARCH_TRIPLET/libsasl2.so.2
