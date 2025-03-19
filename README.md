@@ -147,7 +147,7 @@ For SX1276 radio you need to configure SPI instance as usual in ESPHome and addi
 
 In order to pull latest wmbusmeters code run:
 ```bash
-git subtree pull --prefix components/wmbus_common https://github.com/wmbusmeters/wmbusmeters.git <REF>
+git subtree pull --prefix components/wmbus_common https://github.com/wmbusmeters/wmbusmeters.git <REF> --squash
 ```
 
 ===============================================================
