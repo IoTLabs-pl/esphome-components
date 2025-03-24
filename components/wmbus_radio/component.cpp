@@ -3,10 +3,6 @@
 #include "freertos/task.h"
 #include "freertos/queue.h"
 
-#include "esphome/components/wmbus_common/wmbus.h"
-
-#include "decode3of6.h"
-
 #define ASSERT(expr, expected, before_exit)                       \
   {                                                               \
     auto result = (expr);                                         \
@@ -38,8 +34,7 @@ namespace esphome
           2,
           &(this->receiver_task_handle_)));
 
-      ESP_LOGE(TAG, "Receiver task created");
-      ESP_LOGE(TAG, "Receiver task handle: %p", this->receiver_task_handle_);
+      ESP_LOGI(TAG, "Receiver task created [%p]", this->receiver_task_handle_);
 
       this->radio->attach_data_interrupt(Radio::wakeup_receiver_task_from_isr, &(this->receiver_task_handle_));
     }
@@ -47,35 +42,24 @@ namespace esphome
     void Radio::loop()
     {
       Packet *p;
-      if (xQueueReceive(this->packet_queue_, &p, 0) != pdTRUE)
+      if (xQueueReceive(this->packet_queue_, &p, 0) != pdPASS)
         return;
 
-      std::unique_ptr<Packet> packet{p};
+      auto frame = p->convert_to_frame();
 
-      if (packet->data[0] != WMBUS_MODE_C_PREAMBLE)
-      {
-        auto decoded = decode3of6(packet->data);
-        if (decoded.has_value())
-          packet->data = *decoded;
-      }
-      ESP_LOGI(TAG, "Have data from radio (%zu bytes) [RSSI: %d]", packet->data.size(), packet->rssi);
-
-      removeAnyDLLCRCs(packet->data);
-      int dummy;
-      if (checkWMBusFrame(packet->data, (size_t *)&dummy, &dummy, &dummy, false) != FrameStatus::FullFrame)
-      {
-        ESP_LOGE(TAG, "Frame check failed");
+      if (!frame)
         return;
-      }
+
+      ESP_LOGI(TAG, "Have data from radio (%zu bytes) [RSSI: %d]", frame->data().size(), frame->rssi());
 
       uint8_t packet_handled = 0;
       for (auto &handler : this->handlers_)
-        packet_handled += handler(packet.get());
+        packet_handled += handler(*frame);
 
       if (!packet_handled)
       {
         ESP_LOGI(TAG, "Valid but not handled packet");
-        ESP_LOGI(TAG, format_hex(packet->data).c_str());
+        ESP_LOGI(TAG, frame->as_hex().c_str());
       }
       else
         ESP_LOGI(TAG, "Packet successfully handled by %d handlers", packet_handled);
@@ -90,7 +74,6 @@ namespace esphome
 
     void Radio::receive_frame()
     {
-      ESP_LOGD(TAG, "RX Mode reboot");
       this->radio->restart_rx();
 
       if (!ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(60000)))
@@ -99,37 +82,32 @@ namespace esphome
         return;
       }
       auto packet = std::make_unique<Packet>();
-      packet->data.resize(WMBUS_PREAMBLE_SIZE);
 
-      if (!this->radio->read_in_task(packet->data.data(), WMBUS_PREAMBLE_SIZE))
+      if (!this->radio->read_in_task(packet->rx_data_ptr(), packet->rx_capacity()))
       {
         ESP_LOGD(TAG, "Failed to read preamble");
         return;
       }
 
-      auto total_length = get_packet_size(packet->data);
-
-      if (total_length == 0)
+      if (!packet->calculate_payload_size())
       {
-        ESP_LOGD(TAG, "Cannot decode preamble");
+        ESP_LOGD(TAG, "Cannot calculate payload size");
         return;
       }
 
-      packet->data.resize(total_length);
-
-      if (!this->radio->read_in_task(packet->data.data() + WMBUS_PREAMBLE_SIZE, total_length - WMBUS_PREAMBLE_SIZE))
+      if (!this->radio->read_in_task(packet->rx_data_ptr(), packet->rx_capacity()))
       {
         ESP_LOGW(TAG, "Failed to read data");
         return;
       }
 
-      packet->rssi = this->radio->get_rssi();
+      packet->set_rssi(this->radio->get_rssi());
       auto packet_ptr = packet.get();
 
       if (xQueueSend(this->packet_queue_, &packet_ptr, 0) == pdTRUE)
       {
-        ESP_LOGI(TAG, "Queue items: %zu", uxQueueMessagesWaiting(this->packet_queue_));
-        ESP_LOGI(TAG, "Queue send success");
+        ESP_LOGV(TAG, "Queue items: %zu", uxQueueMessagesWaiting(this->packet_queue_));
+        ESP_LOGV(TAG, "Queue send success");
         packet.release();
       }
       else
@@ -144,7 +122,7 @@ namespace esphome
         arg->receive_frame();
     }
 
-    void Radio::add_packet_handler(std::function<bool(Packet *)> &&callback)
+    void Radio::add_frame_handler(std::function<bool(Frame &)> &&callback)
     {
       this->handlers_.push_back(std::move(callback));
     }

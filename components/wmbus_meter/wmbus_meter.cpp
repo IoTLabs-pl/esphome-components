@@ -16,18 +16,14 @@ namespace esphome
         void Meter::set_radio(wmbus_radio::Radio *radio)
         {
             this->radio = radio;
-            radio->add_packet_handler([this](wmbus_radio::Packet *packet)
-                                      { return this->handle_packet(packet); });
+            radio->add_frame_handler([this](wmbus_radio::Frame &frame)
+                                     { return this->handle_frame(frame); });
         }
-        void Meter::set_rtc(time::RealTimeClock *rtc) { this->rtc = rtc; }
-
         void Meter::dump_config()
         {
-            std::vector<AddressExpression> address_expressions = this->meter->addressExpressions();
-            std::string id = address_expressions.size() > 0 ? address_expressions[0].id : "unknown";
-            std::string driver = this->meter->driverName().str();
-            MeterKeys *keys = this->meter->meterKeys();
-            std::string key = keys->hasConfidentialityKey() ? format_hex(keys->confidentiality_key) : "not-encrypted";
+            std::string id = this->get_id();
+            std::string driver = this->get_driver();
+            std::string key = this->get_key();
 
             ESP_LOGCONFIG(TAG, "wM-Bus Meter:");
             ESP_LOGCONFIG(TAG, "  ID: %s", id.c_str());
@@ -35,19 +31,37 @@ namespace esphome
             ESP_LOGCONFIG(TAG, "  Key: %s", key.c_str());
         }
 
-        bool Meter::handle_packet(wmbus_radio::Packet *packet)
+        std::string Meter::get_id()
         {
-            auto about = AboutTelegram(App.get_friendly_name(), packet->rssi, FrameType::WMBUS, this->rtc->timestamp_now());
+            std::vector<AddressExpression> address_expressions = this->meter->addressExpressions();
+            return address_expressions.size() > 0 ? address_expressions[0].id : "unknown";
+        }
+
+        std::string Meter::get_driver()
+        {
+            return this->meter->driverName().str();
+        }
+
+        std::string Meter::get_key()
+        {
+            MeterKeys *keys = this->meter->meterKeys();
+            return keys->hasConfidentialityKey() ? "***" : "not-encrypted";
+        }
+
+        bool Meter::handle_frame(wmbus_radio::Frame &frame)
+        {
+            auto about = AboutTelegram(App.get_friendly_name(), frame.rssi(), FrameType::WMBUS);
 
             std::vector<Address> adresses;
             bool id_match;
             auto telegram = std::make_unique<Telegram>();
 
-            if (this->meter->handleTelegram(about, packet->data, false, &adresses, &id_match, telegram.get()))
+            if (this->meter->handleTelegram(about, frame.data(), false, &adresses, &id_match, telegram.get()))
             {
                 this->last_telegram = std::move(telegram);
                 this->defer([this]()
                             { this->on_telegram_callback_manager(); });
+
                 return true;
             }
 

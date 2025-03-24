@@ -1,28 +1,32 @@
 import esphome.config_validation as cv
-from esphome.const import SOURCE_FILE_EXTENSIONS
+from esphome.const import SOURCE_FILE_EXTENSIONS, CONF_ID
 from esphome.loader import get_component, ComponentManifest
+from esphome import codegen as cg
 from pathlib import Path
 
 CODEOWNERS = ["@SzczepanLeon", "@kubasaw"]
+CONF_DRIVERS = "drivers"
+
+wmbus_common_ns = cg.esphome_ns.namespace("wmbus_common")
+WMBusCommon = wmbus_common_ns.class_("WMBusCommon", cg.Component)
+
 
 AVAILABLE_DRIVERS = {
     f.stem.removeprefix("driver_") for f in Path(__file__).parent.glob("driver_*.cc")
 }
 
-driver_validator = cv.one_of(*AVAILABLE_DRIVERS, lower=True, space="_")
-registered_drivers = set()
+_registered_drivers = set()
 
 
-def validate_driver(value):
-    value = driver_validator(value)
-    registered_drivers.add(value)
-    return value
+validate_driver = cv.All(
+    cv.one_of(*AVAILABLE_DRIVERS, lower=True, space="_"),
+    lambda driver: _registered_drivers.add(driver) or driver,
+)
 
-
-CONF_DRIVERS = "drivers"
 
 CONFIG_SCHEMA = cv.Schema(
     {
+        cv.GenerateID(): cv.declare_id(WMBusCommon),
         cv.Optional(CONF_DRIVERS, default=set()): cv.All(
             lambda x: AVAILABLE_DRIVERS if x == "all" else x,
             {validate_driver},
@@ -46,4 +50,7 @@ class WMBusComponentManifest(ComponentManifest):
 async def to_code(config):
     component = get_component("wmbus_common")
     component.__class__ = WMBusComponentManifest
-    component.exclude_drivers = AVAILABLE_DRIVERS - registered_drivers
+    component.exclude_drivers = AVAILABLE_DRIVERS - _registered_drivers
+
+    var = cg.new_Pvariable(config[CONF_ID], sorted(_registered_drivers))
+    await cg.register_component(var, config)

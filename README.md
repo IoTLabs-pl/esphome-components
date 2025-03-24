@@ -3,8 +3,6 @@ Kuba's dirty fork of Szczepan's esphome custom components
 TODO:
 - Add backward support for CC1101
 - Add support for SX1262 (with limited frame length)
-- Reimplement TCP and UCP senders. Should be classes with common interface to use as action under Radio->on packet trigger
-- Reimplement HEX and RTLWMBUS formatter to use as parameter of TCP/UDP action
 - ...
 - Prepare packages for ready made boards (like UltimateReader) with displays, leds etc.
 - Aggresive cleanup of wmbusmeters classes/structs
@@ -22,6 +20,8 @@ DONE:
   - Radio->on packet (allow to blink on frame/telegram)
   - Meter->on telegram (allow e.g. to send whole telegram to MQTT)
 - Re-pull of wmbusmeters code from upstream
+- Reimplement TCP and UCP senders. Should be classes with common interface to use as action under Radio->on packet trigger
+- Reimplement HEX and RTLWMBUS formatter to use as parameter of TCP/UDP action
 
 Usage example:
 
@@ -66,23 +66,40 @@ spi:
   mosi_pin: GPIO27
   miso_pin: GPIO19
 
+socket_transmitter:
+  id: my_socket
+  ip_address: 192.168.1.1
+  port: 3333
+  protocol: TCP
+
 mqtt:
   broker: test.mosquitto.org
   port: 1883
   client_id: some_client_id
 
 wmbus_radio:
+  radio_type: SX1276
   cs_pin: GPIO18
   reset_pin: GPIO14
   irq_pin: GPIO35
-  on_packet:
-    - repeat:
-        count: 3
-        then: 
-          - output.turn_on: status_led
-          - delay: 100ms
-          - output.turn_off: status_led
-          - delay: 100ms
+  on_frame:
+    - then:
+        - repeat:
+            count: 3
+            then: 
+              - output.turn_on: status_led
+              - delay: 100ms
+              - output.turn_off: status_led
+              - delay: 100ms
+    - mark_as_handled: True
+      then:
+        - mqtt.publish:
+            topic: wmbus-test/telegram_rtl
+            payload: !lambda return frame.as_rtlwmbus();
+    - mark_as_handled: True
+      then:
+        - wmbus_radio.send_frame_with_socket:
+            format: hex
 
 wmbus_meter:
   - id: electricity_meter
@@ -93,9 +110,9 @@ wmbus_meter:
     meter_id: 0x101010101
     type: hydrocalm3
     on_telegram:
-      - mqtt.publish:
-          topic: wmbus-test/telegram
-          payload: !lambda return meter->as_json();
+      then:
+        - wmbus_meter.send_telegram_with_mqtt:
+            topic: wmbus-test/telegram
 
 output:
   - platform: gpio

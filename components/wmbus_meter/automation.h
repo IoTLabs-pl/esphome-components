@@ -7,13 +7,13 @@ namespace esphome
 {
     namespace wmbus_meter
     {
-        class TelegramTrigger : public Trigger<Meter *>
+        class TelegramTrigger : public Trigger<Meter &>
         {
         public:
             explicit TelegramTrigger(Meter *meter)
             {
                 meter->on_telegram([this, meter]()
-                                   { this->trigger(meter); });
+                                   { this->trigger(*meter); });
             }
         };
 

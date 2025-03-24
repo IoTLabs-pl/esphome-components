@@ -8,15 +8,19 @@ namespace esphome
 {
     namespace wmbus_radio
     {
-        class PacketTrigger : public Trigger<Packet *>
+        class FrameTrigger : public Trigger<Frame &>
         {
         public:
-            explicit PacketTrigger(wmbus_radio::Radio *radio)
+            explicit FrameTrigger(wmbus_radio::Radio *radio, bool mark_handled)
             {
-                radio->add_packet_handler([this](Packet *packet)
-                                          { this->trigger(packet); 
-                                            return false; });
+                radio->add_frame_handler(
+                    [this, mark_handled](Frame &frame)
+                    {
+                        this->trigger(frame);
+                        return mark_handled;
+                    });
             }
         };
+
     }
 }

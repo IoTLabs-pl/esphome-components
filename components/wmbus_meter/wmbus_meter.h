@@ -16,9 +16,11 @@ namespace esphome
         public:
             void set_meter_params(std::string id, std::string driver, std::string key);
             void set_radio(wmbus_radio::Radio *radio);
-            void set_rtc(time::RealTimeClock *rtc);
 
             void dump_config() override;
+            std::string get_id();
+            std::string get_driver();
+            std::string get_key();
 
             void on_telegram(std::function<void()> &&callback);
 
@@ -35,7 +37,7 @@ namespace esphome
 
             CallbackManager<void()> on_telegram_callback_manager;
 
-            bool handle_packet(wmbus_radio::Packet *packet);
+            bool handle_frame(wmbus_radio::Frame &frame);
         };
     }
 }

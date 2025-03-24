@@ -81,7 +81,7 @@ namespace esphome
 
         void RadioTransceiver::dump_config()
         {
-            ESP_LOGCONFIG(TAG, "TRX: %s", this->get_name());
+            ESP_LOGCONFIG(TAG, "Transceiver: %s", this->get_name());
             LOG_PIN("Reset Pin: ", this->reset_pin_);
             LOG_PIN("IRQ Pin: ", this->irq_pin_);
         }
