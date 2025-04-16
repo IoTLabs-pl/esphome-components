@@ -20,6 +20,7 @@ or into csv:
 or into json:
 ```json
 {
+    "_":"telegram",
     "media":"water",
     "meter":"iperl",
     "name":"MyTapWater",
@@ -453,7 +454,7 @@ depending on if you are running as a daemon or not.
 # Running without config files, good for experimentation and test.
 
 ```
-wmbusmeters version: 1.18.0
+wmbusmeters version: 1.19.0
 Usage: wmbusmeters {options} [device] { [meter_name] [meter_driver] [meter_id] [meter_key] }*
        wmbusmeters {options} [hex]    { [meter_name] [meter_driver] [meter_id] [meter_key] }*
        wmbusmetersd {options} [pid_file]
@@ -671,7 +672,7 @@ BFW 240 (bfw240radio)
 
 Supported heat meters:
 Heat meter Techem Compact V / Compact Ve (compact5) (non-standard protocol)
-Heat meter Techem vario 3 type 3.2.1 (mkradio3) (see here: https://github.com/weetmuts/wmbusmeters/issues/333)
+Heat meter Techem vario 3 type 3.2.1 (compact5)
 Heat meter Techem vario 4 (vario451) (non-standard protocol)
 Heat and Cooling meters Kamstrup Multical 302,403,602,603,803 (kamheat)
 Heat meter Apator Elf (elf)
@@ -1022,7 +1023,7 @@ Binary generated: `./build_arm_debug/wmbusmeters`
 `/etc/wmbusmeters.conf`
 `/usr/bin/wmbusmeters`
 `/usr/sbin/wmbusmetersd`
-`/etc/systemd/system/wmbusmeters.service`
+`/lib/systemd/system/wmbusmeters.service`
 `/etc/logrotate.d/wmbusmeters`
 
 creates these directories:
