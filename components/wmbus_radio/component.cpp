@@ -54,7 +54,7 @@ namespace esphome
 
       uint8_t packet_handled = 0;
       for (auto &handler : this->handlers_)
-        packet_handled += handler(*frame);
+        packet_handled += handler(&frame.value());
 
       if (!packet_handled)
       {
@@ -122,7 +122,7 @@ namespace esphome
         arg->receive_frame();
     }
 
-    void Radio::add_frame_handler(std::function<bool(Frame &)> &&callback)
+    void Radio::add_frame_handler(std::function<bool(Frame *)> &&callback)
     {
       this->handlers_.push_back(std::move(callback));
     }

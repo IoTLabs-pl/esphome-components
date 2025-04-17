@@ -26,7 +26,7 @@ namespace esphome
       void loop() override;
       void receive_frame();
 
-      void add_frame_handler(std::function<bool(Frame &)> &&callback);
+      void add_frame_handler(std::function<bool(Frame *)> &&callback);
 
     protected:
       static void wakeup_receiver_task_from_isr(TaskHandle_t *arg);
@@ -36,7 +36,7 @@ namespace esphome
       TaskHandle_t receiver_task_handle_{nullptr};
       QueueHandle_t packet_queue_{nullptr};
 
-      std::vector<std::function<bool(Frame &)>> handlers_;
+      std::vector<std::function<bool(Frame *)>> handlers_;
     };
   } // namespace wmbus
 } // namespace esphome

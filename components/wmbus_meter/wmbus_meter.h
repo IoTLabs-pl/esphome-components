@@ -37,7 +37,7 @@ namespace esphome
 
             CallbackManager<void()> on_telegram_callback_manager;
 
-            bool handle_frame(wmbus_radio::Frame &frame);
+            bool handle_frame(wmbus_radio::Frame *frame);
         };
     }
 }

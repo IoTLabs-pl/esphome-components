@@ -16,7 +16,7 @@ namespace esphome
         void Meter::set_radio(wmbus_radio::Radio *radio)
         {
             this->radio = radio;
-            radio->add_frame_handler([this](wmbus_radio::Frame &frame)
+            radio->add_frame_handler([this](wmbus_radio::Frame *frame)
                                      { return this->handle_frame(frame); });
         }
         void Meter::dump_config()
@@ -48,19 +48,20 @@ namespace esphome
             return keys->hasConfidentialityKey() ? "***" : "not-encrypted";
         }
 
-        bool Meter::handle_frame(wmbus_radio::Frame &frame)
+        bool Meter::handle_frame(wmbus_radio::Frame *frame)
         {
-            auto about = AboutTelegram(App.get_friendly_name(), frame.rssi(), FrameType::WMBUS);
+            auto about = AboutTelegram(App.get_friendly_name(), frame->rssi(), FrameType::WMBUS);
 
             std::vector<Address> adresses;
             bool id_match;
             auto telegram = std::make_unique<Telegram>();
 
-            if (this->meter->handleTelegram(about, frame.data(), false, &adresses, &id_match, telegram.get()))
+            if (this->meter->handleTelegram(about, frame->data(), false, &adresses, &id_match, telegram.get()))
             {
                 this->last_telegram = std::move(telegram);
                 this->defer([this]()
-                            { this->on_telegram_callback_manager(); });
+                            { this->on_telegram_callback_manager();
+                            this->last_telegram=nullptr; });
 
                 return true;
             }
@@ -89,6 +90,9 @@ namespace esphome
             // RSSI is not handled by meter but by telegram :/
             if (field_name == "rssi_dbm")
                 return this->last_telegram->about.rssi_dbm;
+
+            if (field_name == "timestamp")
+                return this->meter->timestampLastUpdate();
 
             std::string name;
             Unit unit;

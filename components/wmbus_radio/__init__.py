@@ -32,8 +32,8 @@ RadioComponent = radio_ns.class_("Radio", cg.Component)
 RadioTransceiver = radio_ns.class_("RadioTransceiver", spi.SPIDevice, cg.Component)
 Frame = radio_ns.class_("Frame")
 FrameOutputFormat = Frame.enum("OutputFormat")
-FrameRef = Frame.operator("ref")
-FrameTrigger = radio_ns.class_("FrameTrigger", automation.Trigger.template(FrameRef))
+FramePtr = Frame.operator("ptr")
+FrameTrigger = radio_ns.class_("FrameTrigger", automation.Trigger.template(FramePtr))
 
 TRANSCEIVER_NAMES = {
     r.stem.removeprefix("transceiver_").upper()
@@ -89,7 +89,7 @@ async def to_code(config):
         trig = cg.new_Pvariable(conf[CONF_TRIGGER_ID], var, conf[CONF_MARK_AS_HANDLED])
         await automation.build_automation(
             trig,
-            [(FrameRef, "frame")],
+            [(FramePtr, "frame")],
             conf,
         )
 
