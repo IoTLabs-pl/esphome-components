@@ -50,19 +50,20 @@ namespace esphome
       if (!frame)
         return;
 
-      ESP_LOGI(TAG, "Have data from radio (%zu bytes) [RSSI: %d]", frame->data().size(), frame->rssi());
+      ESP_LOGI(TAG, "Have data from radio (%zu bytes) [RSSI: %d, mode:%s]", frame->data().size(), frame->rssi(), toString(frame->link_mode()));
 
       uint8_t packet_handled = 0;
       for (auto &handler : this->handlers_)
-        packet_handled += handler(&frame.value());
+        handler(&frame.value());
 
-      if (!packet_handled)
-      {
-        ESP_LOGI(TAG, "Valid but not handled packet");
-        ESP_LOGI(TAG, frame->as_hex().c_str());
-      }
+      if (frame->handlers_count())
+        ESP_LOGI(TAG, "Telegram handled by %d handlers", frame->handlers_count());
       else
-        ESP_LOGI(TAG, "Packet successfully handled by %d handlers", packet_handled);
+      {
+        ESP_LOGW(TAG, "Telegram not handled by any handler");
+        ESP_LOGW(TAG, "Check if telegram can be parsed on:");
+        ESP_LOGW(TAG, (std::string{"https://wmbusmeters.org/analyze/"}+frame->as_hex()).c_str());
+      }
     }
 
     void Radio::wakeup_receiver_task_from_isr(TaskHandle_t *arg)
@@ -85,7 +86,7 @@ namespace esphome
 
       if (!this->radio->read_in_task(packet->rx_data_ptr(), packet->rx_capacity()))
       {
-        ESP_LOGD(TAG, "Failed to read preamble");
+        ESP_LOGV(TAG, "Failed to read preamble");
         return;
       }
 
@@ -122,7 +123,7 @@ namespace esphome
         arg->receive_frame();
     }
 
-    void Radio::add_frame_handler(std::function<bool(Frame *)> &&callback)
+    void Radio::add_frame_handler(std::function<void(Frame *)> &&callback)
     {
       this->handlers_.push_back(std::move(callback));
     }

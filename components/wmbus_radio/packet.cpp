@@ -3,6 +3,7 @@
 #include <ctime>
 
 #include "esphome/core/helpers.h"
+#include "esphome/components/wmbus_common/meters.h"
 
 #include "decode3of6.h"
 
@@ -15,8 +16,6 @@ namespace esphome
 {
     namespace wmbus_radio
     {
-        static const char *TAG = "wmbus.packet";
-
         Packet::Packet()
         {
             this->data_.reserve(WMBUS_PREAMBLE_SIZE);
@@ -117,8 +116,6 @@ namespace esphome
             int dummy;
             if (checkWMBusFrame(this->data_, (size_t *)&dummy, &dummy, &dummy, false) == FrameStatus::FullFrame)
                 frame.emplace(this);
-            else
-                ESP_LOGI(TAG, "Cannot convert received packet to frame");
 
             delete this;
 
@@ -157,6 +154,15 @@ namespace esphome
             output += "\n";                           // size 1
 
             return output;
+        }
+
+        void Frame::mark_as_handled()
+        {
+            this->handlers_count_++;
+        }
+        uint8_t Frame::handlers_count()
+        {
+            return this->handlers_count_;
         }
 
     }

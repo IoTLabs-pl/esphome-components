@@ -14,7 +14,7 @@ namespace esphome
         class Meter : public Component
         {
         public:
-            void set_meter_params(std::string id, std::string driver, std::string key);
+            void set_meter_params(std::string id, std::string driver, std::string key, std::initializer_list<LinkMode> linkModes);
             void set_radio(wmbus_radio::Radio *radio);
 
             void dump_config() override;
@@ -29,6 +29,7 @@ namespace esphome
             optional<float> get_numeric_field(std::string field_name);
 
         protected:
+            LinkModeSet link_modes_;
             time::RealTimeClock *rtc;
             wmbus_radio::Radio *radio;
 
@@ -37,7 +38,7 @@ namespace esphome
 
             CallbackManager<void()> on_telegram_callback_manager;
 
-            bool handle_frame(wmbus_radio::Frame *frame);
+            void handle_frame(wmbus_radio::Frame *frame);
         };
     }
 }

@@ -6,6 +6,7 @@ from esphome.const import (
     CONF_KEY,
     CONF_PAYLOAD,
     CONF_TRIGGER_ID,
+    CONF_MODE,
 )
 from esphome import automation
 from esphome.components.mqtt import (
@@ -30,6 +31,7 @@ MULTI_CONF = True
 
 
 wmbus_meter_ns = cg.esphome_ns.namespace("wmbus_meter")
+link_mode_enum = cg.global_ns.enum("LinkMode", is_class=True)
 Meter = wmbus_meter_ns.class_("Meter", cg.Component)
 MeterRef = Meter.operator("ref")
 TelegramTrigger = wmbus_meter_ns.class_(
@@ -50,18 +52,23 @@ CONFIG_SCHEMA = cv.Schema(
     {
         cv.GenerateID(): cv.declare_id(Meter),
         cv.GenerateID(CONF_RADIO_ID): cv.use_id(RadioComponent),
-        cv.Required(CONF_METER_ID): cv.All(
+        cv.Optional(CONF_METER_ID, default=""): cv.All(
             cv.hex_int,
             hex,
-            lambda s: (s := s.removeprefix("0x")).zfill(((len(s) + 1) // 2) * 2),
+            lambda s: str(s).removeprefix('0x'),
         ),
         cv.Optional(CONF_TYPE, default="auto"): validate_driver,
         cv.Optional(CONF_KEY): cv.Any(
+            cv.All(cv.string_strict, lambda s: s.encode().hex(), hex_key_validator),
             hex_key_validator,
-            cv.All(cv.string, lambda s: s.encode().hex(), hex_key_validator),
         ),
         cv.Optional(CONF_ON_TELEGRAM): automation.validate_automation(
             {cv.GenerateID(CONF_TRIGGER_ID): cv.declare_id(TelegramTrigger)},
+        ),
+        cv.Optional(CONF_MODE, default="Any"): cv.ensure_list(
+            cv.enum(
+                {name: getattr(link_mode_enum, name) for name in ("Any", "C1", "T1")}
+            )
         ),
     }
 ).extend(cv.COMPONENT_SCHEMA)
@@ -74,6 +81,7 @@ async def to_code(config):
             config[CONF_METER_ID],
             config[CONF_TYPE],
             config.get(CONF_KEY, ""),
+            config[CONF_MODE],
         )
     )
 

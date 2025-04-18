@@ -54,10 +54,14 @@ namespace esphome
             std::string as_hex();
             std::string as_rtlwmbus();
 
+            void mark_as_handled();
+            uint8_t handlers_count();
+
         protected:
             std::vector<uint8_t> data_;
             LinkMode link_mode_;
             int8_t rssi_;
+            uint8_t handlers_count_ = 0;
         };
 
     }

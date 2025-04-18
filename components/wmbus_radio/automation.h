@@ -17,7 +17,8 @@ namespace esphome
                     [this, mark_handled](Frame *frame)
                     {
                         this->trigger(frame);
-                        return mark_handled;
+                        if (mark_handled)
+                            frame->mark_as_handled();
                     });
             }
         };

@@ -6,12 +6,15 @@ namespace esphome
     {
         static const char *TAG = "wmbus_meter";
 
-        void Meter::set_meter_params(std::string id, std::string driver, std::string key)
+        void Meter::set_meter_params(std::string id, std::string driver, std::string key, std::initializer_list<LinkMode> linkModes)
         {
             MeterInfo meter_info;
             meter_info.parse(driver + '-' + id, driver, id + ",", key);
 
             this->meter = createMeter(&meter_info);
+
+            for (auto linkMode : linkModes)
+                this->link_modes_.addLinkMode(linkMode);
         }
         void Meter::set_radio(wmbus_radio::Radio *radio)
         {
@@ -48,25 +51,33 @@ namespace esphome
             return keys->hasConfidentialityKey() ? "***" : "not-encrypted";
         }
 
-        bool Meter::handle_frame(wmbus_radio::Frame *frame)
+        void Meter::handle_frame(wmbus_radio::Frame *frame)
         {
+            if (!this->link_modes_.has(frame->link_mode()))
+            {
+                ESP_LOGW(TAG, "Frame link mode %s not supported by meter %s",
+                         toString(frame->link_mode()),
+                         this->meter->name().c_str());
+                return;
+            }
+
             auto about = AboutTelegram(App.get_friendly_name(), frame->rssi(), FrameType::WMBUS);
 
             std::vector<Address> adresses;
-            bool id_match;
+            bool id_match = false;
             auto telegram = std::make_unique<Telegram>();
 
-            if (this->meter->handleTelegram(about, frame->data(), false, &adresses, &id_match, telegram.get()))
+            this->meter->handleTelegram(about, frame->data(), false, &adresses, &id_match, telegram.get());
+
+            if (id_match)
             {
                 this->last_telegram = std::move(telegram);
                 this->defer([this]()
                             { this->on_telegram_callback_manager();
                             this->last_telegram=nullptr; });
 
-                return true;
+                frame->mark_as_handled();
             }
-
-            return false;
         }
 
         std::string Meter::as_json(bool pretty_print)
